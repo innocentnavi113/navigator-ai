@@ -102,7 +102,7 @@ async function analyzeChart() {
     const data = await response.json()
     const text = data.choices?.[0]?.message?.content || ''
     const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('No JSON found in response. Please try again.')
+    if (!jsonMatch) throw new Error(`Model returned: "${text.slice(0, 200)}"`)
     setResult(JSON.parse(jsonMatch[0].trim()))
   } catch (err) {
     setError('Analysis failed: ' + (err.message || 'Unknown error.'))
