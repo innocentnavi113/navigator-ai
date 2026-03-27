@@ -3,12 +3,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './supabase'
 import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
+import LandingPage from './pages/LandingPage'
 
-// ── ProtectedRoute ──────────────────────────────────────────────────────────
-// If the user is not signed in, send them to /auth instead
 function ProtectedRoute({ session, children }) {
   if (session === undefined) {
-    // Still loading — show nothing while we check auth
     return (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -32,42 +30,38 @@ function ProtectedRoute({ session, children }) {
   return children
 }
 
-// ── App ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  // undefined = still loading, null = not signed in, object = signed in
   const [session, setSession] = useState(undefined)
 
   useEffect(() => {
-    // Check if there's already a session when the app first loads
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session ?? null)
     })
-
-    // Listen for sign-in / sign-out events and update state automatically
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session ?? null)
     })
-
-    // Clean up the listener when the component unmounts
     return () => subscription.unsubscribe()
   }, [])
 
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public route — the sign in / sign up page */}
+        {/* Public landing page */}
+        <Route path="/" element={<LandingPage />} />
+
+        {/* Auth page — redirect to dashboard if already signed in */}
         <Route
           path="/auth"
           element={
             session
-              ? <Navigate to="/" replace />   /* already signed in → go home */
+              ? <Navigate to="/dashboard" replace />
               : <AuthPage />
           }
         />
 
-        {/* Protected route — only accessible when signed in */}
+        {/* Protected dashboard */}
         <Route
-          path="/"
+          path="/dashboard"
           element={
             <ProtectedRoute session={session}>
               <Dashboard session={session} />
@@ -75,7 +69,7 @@ export default function App() {
           }
         />
 
-        {/* Catch-all: redirect anything unknown to home */}
+        {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
