@@ -49,59 +49,67 @@ export default function Dashboard({ session }) {
     await supabase.auth.signOut()
   }
 
-  async function analyzeChart() {
-    if (!imageBase64) return
-    setLoading(true); setResult(null); setError('')
+async function analyzeChart() {
+  if (!imageBase64) return
+  setLoading(true); setResult(null); setError('')
 
-    const prompt = `You are NAVIGATOR AI, an elite professional trading analyst. Analyze this chart image and provide a precise, actionable trade plan.
+  const prompt = `Analyze this trading chart. You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
 
-Respond ONLY with a valid JSON object (no markdown, no extra text) with this exact structure:
 {
-  "pair": "<detected currency pair or instrument e.g. EURUSD>",
-  "timeframe": "<detected timeframe e.g. 30M, 1H, 4H>",
-  "direction": "BUY" | "SELL",
-  "sentiment": "Bullish" | "Bearish" | "Neutral" | "Strongly Bullish" | "Strongly Bearish",
-  "sentimentScore": <number 0-100>,
-  "entryPrice": "<exact price level to enter>",
-  "stopLoss": "<exact stop loss price>",
-  "takeProfit1": "<TP1 conservative target>",
-  "takeProfit2": "<TP2 main target>",
-  "takeProfit3": "<TP3 extended target>",
-  "riskReward": "<ratio e.g. 1:2.5>",
-  "priceAction": "<2-3 sentences on candlestick patterns and trend>",
-  "supportResistance": "<2-3 sentences on key levels>",
-  "technicalIndicators": "<2-3 sentences on visible indicators>",
-  "marketSentiment": "<2-3 sentences on market sentiment>",
-  "summary": "<3-4 sentences trade rationale and risk warning>",
-  "tags": ["<tag1>", "<tag2>", "<tag3>"]
+  "pair": "detected pair e.g. EURUSD",
+  "timeframe": "detected timeframe e.g. 30M",
+  "direction": "BUY or SELL",
+  "sentiment": "Bullish or Bearish or Neutral or Strongly Bullish or Strongly Bearish",
+  "sentimentScore": 50,
+  "entryPrice": "price level",
+  "stopLoss": "price level",
+  "takeProfit1": "price level",
+  "takeProfit2": "price level",
+  "takeProfit3": "price level",
+  "riskReward": "1:2",
+  "priceAction": "2-3 sentences",
+  "supportResistance": "2-3 sentences",
+  "technicalIndicators": "2-3 sentences",
+  "marketSentiment": "2-3 sentences",
+  "summary": "3-4 sentences",
+  "tags": ["tag1", "tag2", "tag3"]
 }`
 
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'openrouter/free',
-          messages: [{ role: 'user', content: [
-            { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
-            { type: 'text', text: prompt }
-          ]}]
-        })
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'openrouter/free',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a trading analyst. You ONLY respond with raw JSON objects. Never add any text, markdown, or explanation outside the JSON.'
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
+              { type: 'text', text: prompt }
+            ]
+          }
+        ]
       })
-      const data = await response.json()
-      const text = data.choices?.[0]?.message?.content || ''
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) throw new Error('No JSON found in response. Please try again.')
-      setResult(JSON.parse(jsonMatch[0].trim()))
-    } catch (err) {
-      setError('Analysis failed: ' + (err.message || 'Unknown error.'))
-    } finally {
-      setLoading(false)
-    }
+    })
+    const data = await response.json()
+    const text = data.choices?.[0]?.message?.content || ''
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('No JSON found in response. Please try again.')
+    setResult(JSON.parse(jsonMatch[0].trim()))
+  } catch (err) {
+    setError('Analysis failed: ' + (err.message || 'Unknown error.'))
+  } finally {
+    setLoading(false)
   }
+}
 
   function getSentimentColor(score) {
     if (score >= 65) return 'var(--green)'
