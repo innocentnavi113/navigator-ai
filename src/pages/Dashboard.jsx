@@ -18,6 +18,8 @@ export default function Dashboard({ session }) {
     session?.user?.email?.split('@')[0] ||
     'Trader'
 
+  // ── File handling ────────────────────────────────────────────────────────
+
   function loadFile(file) {
     if (!file || !file.type.startsWith('image/')) return
     const reader = new FileReader()
@@ -45,18 +47,22 @@ export default function Dashboard({ session }) {
     loadFile(e.dataTransfer.files[0])
   }
 
+  // ── Sign out ─────────────────────────────────────────────────────────────
+
   async function handleSignOut() {
     await supabase.auth.signOut()
   }
 
-async function analyzeChart() {
-  if (!imageBase64) return
-  setLoading(true); setResult(null); setError('')
+  // ── AI Analysis ──────────────────────────────────────────────────────────
 
-  const prompt = `Analyze this trading chart. You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
+  async function analyzeChart() {
+    if (!imageBase64) return
+    setLoading(true); setResult(null); setError('')
+
+    const prompt = `Analyze this trading chart. You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
 
 {
-  "pair": "detected pair e.g. EURUSD",
+  "pair": "READ the exact instrument name from the chart label or title visible in the image. Do not guess.",
   "timeframe": "detected timeframe e.g. 30M",
   "direction": "BUY or SELL",
   "sentiment": "Bullish or Bearish or Neutral or Strongly Bullish or Strongly Bearish",
@@ -75,41 +81,36 @@ async function analyzeChart() {
   "tags": ["tag1", "tag2", "tag3"]
 }`
 
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'openrouter/free',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a trading analyst. You ONLY respond with raw JSON objects. Never add any text, markdown, or explanation outside the JSON.'
-          },
-          {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
-              { type: 'text', text: prompt }
-            ]
-          }
-        ]
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64, imageType, prompt })
       })
-    })
-    const data = await response.json()
-    const text = data.choices?.[0]?.message?.content || ''
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error(`Model returned: "${text.slice(0, 200)}"`)
-    setResult(JSON.parse(jsonMatch[0].trim()))
-  } catch (err) {
-    setError('Analysis failed: ' + (err.message || 'Unknown error.'))
-  } finally {
-    setLoading(false)
+
+      const data = await response.json()
+
+      // Handle error responses from our API route
+      if (!response.ok) {
+        throw new Error(data.error || 'API request failed')
+      }
+
+      // Extract the text from Claude's response
+      const text = data.content?.map(b => b.text || '').join('') || ''
+
+      // Find and parse the JSON object from the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error(`Model returned: "${text.slice(0, 200)}"`)
+
+      setResult(JSON.parse(jsonMatch[0].trim()))
+    } catch (err) {
+      setError('Analysis failed: ' + (err.message || 'Unknown error.'))
+    } finally {
+      setLoading(false)
+    }
   }
-}
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
   function getSentimentColor(score) {
     if (score >= 65) return 'var(--green)'
@@ -133,6 +134,8 @@ async function analyzeChart() {
 
   const isBuy = result?.direction === 'BUY'
 
+  // ── Render ───────────────────────────────────────────────────────────────
+
   return (
     <div className={styles.wrapper}>
 
@@ -144,7 +147,6 @@ async function analyzeChart() {
           <span className={styles.logoAi}>AI</span>
         </div>
         <div className={styles.headerRight}>
-          {/* Avatar + name — no email shown */}
           <div className={styles.userChip}>
             <div className={styles.userAvatar}>
               {userName.charAt(0).toUpperCase()}
@@ -186,23 +188,38 @@ async function analyzeChart() {
             <div className={styles.dropIcon}>📊</div>
             <div className={styles.dropTitle}>Drop your chart here</div>
             <div className={styles.dropSub}>Supports PNG, JPG, WEBP — any timeframe, any pair</div>
-            <button className={styles.browseBtn} onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
+            <button
+              className={styles.browseBtn}
+              onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}
+            >
               ⬆ Browse Chart
             </button>
           </div>
         )}
-        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => loadFile(e.target.files[0])} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={e => loadFile(e.target.files[0])}
+        />
       </div>
 
       {/* Analyze button */}
       <div className={styles.analyzeWrap}>
-        <button className={styles.analyzeBtn} onClick={analyzeChart} disabled={!imageBase64 || loading}>
+        <button
+          className={styles.analyzeBtn}
+          onClick={analyzeChart}
+          disabled={!imageBase64 || loading}
+        >
           {loading ? 'Navigating...' : '🧭 Analyze Chart'}
         </button>
       </div>
 
+      {/* Error */}
       {error && <div className={styles.errorBox}>⚠ {error}</div>}
 
+      {/* Loading */}
       {loading && (
         <div className={styles.loadingWrap}>
           <div className={styles.pulseLoader}><div className={styles.pulseCore} /></div>
@@ -210,13 +227,15 @@ async function analyzeChart() {
         </div>
       )}
 
+      {/* Results */}
       {result && (
         <div className={styles.results}>
 
+          {/* Header row */}
           <div className={styles.resultsHeader}>
             <div className={styles.resultsTitle}>Analysis Complete</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {result.pair && <span className={styles.pairBadge}>{result.pair}</span>}
+              {result.pair      && <span className={styles.pairBadge}>{result.pair}</span>}
               {result.timeframe && <span className={styles.tfBadge}>{result.timeframe}</span>}
               <span className={styles.badge}>LIVE RESULT</span>
             </div>
@@ -279,11 +298,20 @@ async function analyzeChart() {
           <div className={styles.sentimentCard}>
             <div className={styles.sentimentLabel}>Overall Market Sentiment</div>
             <div className={styles.sentimentRow}>
-              <div className={styles.sentimentValue} style={{ color: getSentimentColor(result.sentimentScore) }}>
+              <div
+                className={styles.sentimentValue}
+                style={{ color: getSentimentColor(result.sentimentScore) }}
+              >
                 {result.sentiment}
               </div>
               <div className={styles.sentimentBarWrap}>
-                <div className={styles.sentimentBar} style={{ width: `${result.sentimentScore}%`, background: getSentimentGradient(result.sentimentScore) }} />
+                <div
+                  className={styles.sentimentBar}
+                  style={{
+                    width: `${result.sentimentScore}%`,
+                    background: getSentimentGradient(result.sentimentScore)
+                  }}
+                />
               </div>
             </div>
             <div className={styles.tagsRow}>
