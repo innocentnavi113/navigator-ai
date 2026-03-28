@@ -63,50 +63,49 @@ export default function Dashboard({ session }) {
     setResult(null)
     setError('')
 
-          const prompt = `You are NAVI V3 — an AI trading analyst based on the NAVI V3 Expert Advisor strategy. Analyze this chart using the exact same logic as the EA.
+       const prompt = `You are ULTRAVENOM AI — a trading analyst that uses the exact same logic as the ULTRAVENOM AI scalper pro Expert Advisor. Analyze this M15 chart using these exact rules:
 
-The EA uses these indicators and rules:
-- ENTRY: AMA (fast, period 1) crossover above/below LWMA (slow, period 50) on M5
-- CONFIRMATION: ADX > 22 with +DI/-DI direction alignment
-- MOMENTUM: MACD (8,17,9) must align with direction
-- TREND STRENGTH: ADX must be gaining (not falling) — consecutive rising bars
-- RSI (14): Must be above 30 for BUY, below 70 for SELL
-- ACCELERATOR OSCILLATOR: Must align with trade direction
-- FRACTALS: Entry triggered on first fractal after crossover
-- SUPPORT/RESISTANCE: Price must not be blocked at key S/R levels
-- ATR (14): Used for SL (x2) and TP (x5) calculation
-- BREAKEVEN: Triggered at 3x ATR profit
-- RSI EXIT: Close trade if RSI reaches extreme (70/30) with profit > 300 pips
-- AGGRESSIVE MODE: Requires ADX > 20, RSI > 55 bull / < 45 bear
+STRATEGY RULES:
+1. MARKET STRUCTURE: Identify if price is BULLISH (above SMA 80) or BEARISH (below SMA 80)
+2. BREAK OF STRUCTURE (BoS): Bullish BoS = price breaks above recent swing high. Bearish BoS = price breaks below recent swing low
+3. CHANGE OF CHARACTER (CHoCH): In downtrend price breaks swing high = bullish reversal. In uptrend price breaks swing low = bearish reversal
+4. FAIR VALUE GAP (FVG): 3-candle pattern where candle 1 high and candle 3 low dont overlap (bullish FVG) or candle 1 low and candle 3 high dont overlap (bearish FVG). Minimum 5 pips
+5. ORDER BLOCK: Last bearish candle before strong bullish move (bullish OB) or last bullish candle before strong bearish move (bearish OB)
+6. ENTRY: Only enter when price PULLS BACK into the FVG or Order Block after BoS or CHoCH
+7. SL: ATR(14) x 2.0 from entry price
+8. TP1: ATR(14) x 2.0 from entry (conservative)
+9. TP2: ATR(14) x 3.5 from entry (main target)
+10. TP3: ATR(14) x 5.0 from entry (full EA target)
+11. KILL ZONES: London (8-12 GMT) and New York (13-19 GMT) sessions only
+12. NO TRADE if price is not pulling back into FVG or OB zone
 
-Based on what you see in the chart, simulate what NAVI V3 would do.
+Based on what you see in this chart, simulate exactly what ULTRAVENOM AI EA would do.
 
 You MUST respond with ONLY a JSON object. No text before or after. No markdown. Just raw JSON starting with { and ending with }.
 
 {
   "pair": "READ the exact instrument name visible in the chart image",
-  "timeframe": "detected timeframe e.g. M5",
+  "timeframe": "M15",
   "direction": "BUY or SELL or NO SIGNAL",
-  "crossover": "Describe the AMA/LWMA crossover status — bullish cross, bearish cross, or no cross",
-  "adxStatus": "ADX value estimate and whether it is GAINING or LOSING or NEUTRAL",
-  "macdAlignment": "ALIGNED or NOT ALIGNED with direction",
-  "rsiValue": "estimated RSI value and status",
-  "fractalSignal": "Describe any fractal pattern visible after the crossover",
+  "marketStructure": "BULLISH or BEARISH or RANGING — based on price vs SMA 80",
+  "structureBreak": "Describe the BoS or CHoCH detected — e.g. Bullish BoS: price broke above swing high at 1.2345",
+  "fvgZone": "Describe the FVG zone detected — upper and lower levels e.g. FVG between 1.2310 and 1.2325",
+  "orderBlock": "Describe the Order Block detected — upper and lower levels e.g. Bullish OB between 1.2290 and 1.2310",
+  "entryZone": "Price level where EA would enter — inside the FVG or OB zone e.g. 1.2315",
+  "entryPrice": "Exact entry price level",
+  "stopLoss": "Exact SL price — ATR x 2.0 below entry for BUY or above entry for SELL",
+  "takeProfit1": "TP1 price — ATR x 2.0 from entry (conservative, 1:1 RR)",
+  "takeProfit2": "TP2 price — ATR x 3.5 from entry (main target, 1:1.75 RR)",
+  "takeProfit3": "TP3 price — ATR x 5.0 from entry (EA full target, 1:2.5 RR)",
+  "riskReward": "1:2.5",
+  "killZone": "LONDON or NEW YORK or OUTSIDE KILL ZONE",
   "sentiment": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
   "sentimentScore": 50,
-  "entryPrice": "price level based on current ask/bid",
-  "stopLoss": "price level — ATR x2 from entry",
-  "takeProfit1": "price level — ATR x2 (conservative)",
-  "takeProfit2": "price level — ATR x3.5 (main target)",
-  "takeProfit3": "price level — ATR x5 (EA full target)",
-  "breakevenLevel": "price level where EA would move SL to breakeven (ATR x3)",
-  "riskReward": "1:2.5",
-  "srAnalysis": "Describe any visible support or resistance levels blocking or confirming the trade",
-  "priceAction": "2-3 sentences on M5 candle structure, crossover bar, and fractal formation",
-  "supportResistance": "2-3 sentences on key S/R levels the EA would detect",
-  "technicalIndicators": "2-3 sentences on ADX strength, MACD alignment, RSI, and AC oscillator readings",
-  "marketSentiment": "2-3 sentences on overall trend bias and whether aggressive mode would activate",
-  "summary": "3-4 sentences — what NAVI V3 EA would do on this chart: entry signal, confirmation status, SL/TP placement, and any filters that would block the trade",
+  "priceAction": "2-3 sentences on market structure, BoS or CHoCH location, and pullback status",
+  "supportResistance": "2-3 sentences on the FVG and Order Block zones visible on the chart",
+  "technicalIndicators": "2-3 sentences on SMA 80 position, ATR value estimate, and price relationship to SMA",
+  "marketSentiment": "2-3 sentences on overall ICT bias and whether a valid pullback entry exists",
+  "summary": "3-4 sentences — exactly what ULTRAVENOM AI would do: entry zone, SL, TP levels, and any reasons it would NOT trade",
   "tags": ["tag1", "tag2", "tag3"]
 }`
 
@@ -348,23 +347,23 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
           {/* 4-card grid */}
           <div className={styles.grid}>
             <div className={`${styles.card} ${styles.cardCyan}`}>
-              <div className={styles.cardIcon}>🕯️</div>
-              <div className={styles.cardTitle}>Price Action &amp; Patterns</div>
+              <div className={styles.cardIcon}>📊</div>
+              <div className={styles.cardTitle}>Market Structure & BoS/CHoCH</div>
               <div className={styles.cardContent}>{result.priceAction}</div>
             </div>
             <div className={`${styles.card} ${styles.cardViolet}`}>
-              <div className={styles.cardIcon}>📐</div>
-              <div className={styles.cardTitle}>Support &amp; Resistance</div>
+              <div className={styles.cardIcon}>🧱</div>
+              <div className={styles.cardTitle}>FVG & Order Block Zones</div>
               <div className={styles.cardContent}>{result.supportResistance}</div>
             </div>
             <div className={`${styles.card} ${styles.cardPink}`}>
-              <div className={styles.cardIcon}>📊</div>
-              <div className={styles.cardTitle}>Technical Indicators</div>
+              <div className={styles.cardIcon}>📈</div>
+              <div className={styles.cardTitle}>SMA 80 & ATR Readings</div>
               <div className={styles.cardContent}>{result.technicalIndicators}</div>
             </div>
             <div className={`${styles.card} ${styles.cardAmber}`}>
-              <div className={styles.cardIcon}>🌐</div>
-              <div className={styles.cardTitle}>Market Sentiment</div>
+              <div className={styles.cardIcon}>🎯</div>
+              <div className={styles.cardTitle}>ICT Bias & Entry Signal</div>
               <div className={styles.cardContent}>{result.marketSentiment}</div>
             </div>
           </div>
