@@ -63,25 +63,35 @@ export default function Dashboard({ session }) {
     setResult(null)
     setError('')
 
-    const prompt = `Analyze this trading chart. You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
+       const prompt = `You are an ICT/Smart Money trading analyst. Analyze this chart using the following strategy:
+
+1. First establish the BIAS (bullish or bearish) from the higher timeframe structure
+2. Align to the structural timeframe and confirm with CISD (Change in State of Delivery)
+3. Identify key entry levels: Fair Value Gaps (FVGs), Significant highs/lows, Order Blocks
+
+You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
 
 {
   "pair": "READ the exact instrument name from the chart label or title visible in the image. Do not guess.",
-  "timeframe": "detected timeframe e.g. 30M",
+  "timeframe": "detected timeframe e.g. 15M",
   "direction": "BUY or SELL",
+  "bias": "Bullish or Bearish based on higher timeframe structure",
+  "cisd": "Describe the Change in State of Delivery confirmation seen on the chart",
   "sentiment": "Bullish or Bearish or Neutral or Strongly Bullish or Strongly Bearish",
   "sentimentScore": 50,
   "entryPrice": "price level",
-  "stopLoss": "price level",
-  "takeProfit1": "price level",
-  "takeProfit2": "price level",
-  "takeProfit3": "price level",
+  "stopLoss": "price level - below/above the order block or significant low/high",
+  "takeProfit1": "price level - nearest FVG or significant level",
+  "takeProfit2": "price level - mid structural target",
+  "takeProfit3": "price level - ultimate structural target",
   "riskReward": "1:2",
-  "priceAction": "2-3 sentences",
-  "supportResistance": "2-3 sentences",
-  "technicalIndicators": "2-3 sentences",
-  "marketSentiment": "2-3 sentences",
-  "summary": "3-4 sentences",
+  "fairValueGaps": "Describe any FVGs visible on the chart and their price levels",
+  "orderBlocks": "Describe any order blocks visible and their significance",
+  "priceAction": "2-3 sentences on market structure, CISD, and delivery patterns",
+  "supportResistance": "2-3 sentences on significant highs/lows and key structural levels",
+  "technicalIndicators": "2-3 sentences on any visible indicators supporting the bias",
+  "marketSentiment": "2-3 sentences on overall smart money sentiment and institutional bias",
+  "summary": "3-4 sentences covering the bias, CISD confirmation, entry rationale, and risk management",
   "tags": ["tag1", "tag2", "tag3"]
 }`
 
