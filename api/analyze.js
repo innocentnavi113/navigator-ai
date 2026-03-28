@@ -23,7 +23,7 @@ export default async function handler(req, res) {
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'google/gemini-2.5-pro-exp-03-25:free',
         messages: [
           {
             role: 'user',
@@ -52,10 +52,7 @@ export default async function handler(req, res) {
       })
     }
 
-    // Extract text content from OpenRouter response
     const text = data.choices?.[0]?.message?.content || ''
-
-    // Pull out the JSON object from the response text
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return res.status(500).json({
@@ -63,7 +60,6 @@ export default async function handler(req, res) {
       })
     }
 
-    // Parse the JSON and send it back as { result: ... }
     const result = JSON.parse(jsonMatch[0].trim())
     return res.status(200).json({ result })
 
