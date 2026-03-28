@@ -17,8 +17,6 @@ export default function Dashboard({ session }) {
     session?.user?.email?.split('@')[0] ||
     'Trader'
 
-  // ── File handling ────────────────────────────────────────────────────────
-
   function loadFile(file) {
     if (!file || !file.type.startsWith('image/')) return
     const reader = new FileReader()
@@ -49,13 +47,9 @@ export default function Dashboard({ session }) {
     loadFile(e.dataTransfer.files[0])
   }
 
-  // ── Sign out ─────────────────────────────────────────────────────────────
-
   async function handleSignOut() {
     await supabase.auth.signOut()
   }
-
-  // ── AI Analysis ──────────────────────────────────────────────────────────
 
   async function analyzeChart() {
     if (!imageBase64) return
@@ -63,49 +57,46 @@ export default function Dashboard({ session }) {
     setResult(null)
     setError('')
 
-       const prompt = `You are ULTRAVENOM AI — a trading analyst that uses the exact same logic as the ULTRAVENOM AI scalper pro Expert Advisor. Analyze this M15 chart using these exact rules:
+    const prompt = `You are ULTRAVENOM AI — a trading analyst using ICT Smart Money concepts identical to the ULTRAVENOM AI scalper pro Expert Advisor on M15 charts.
 
 STRATEGY RULES:
-1. MARKET STRUCTURE: Identify if price is BULLISH (above SMA 80) or BEARISH (below SMA 80)
-2. BREAK OF STRUCTURE (BoS): Bullish BoS = price breaks above recent swing high. Bearish BoS = price breaks below recent swing low
-3. CHANGE OF CHARACTER (CHoCH): In downtrend price breaks swing high = bullish reversal. In uptrend price breaks swing low = bearish reversal
-4. FAIR VALUE GAP (FVG): 3-candle pattern where candle 1 high and candle 3 low dont overlap (bullish FVG) or candle 1 low and candle 3 high dont overlap (bearish FVG). Minimum 5 pips
-5. ORDER BLOCK: Last bearish candle before strong bullish move (bullish OB) or last bullish candle before strong bearish move (bearish OB)
-6. ENTRY: Only enter when price PULLS BACK into the FVG or Order Block after BoS or CHoCH
-7. SL: ATR(14) x 2.0 from entry price
-8. TP1: ATR(14) x 2.0 from entry (conservative)
-9. TP2: ATR(14) x 3.5 from entry (main target)
-10. TP3: ATR(14) x 5.0 from entry (full EA target)
-11. KILL ZONES: London (8-12 GMT) and New York (13-19 GMT) sessions only
-12. NO TRADE if price is not pulling back into FVG or OB zone
+1. MARKET STRUCTURE: Price above SMA 80 = BULLISH. Price below SMA 80 = BEARISH
+2. BREAK OF STRUCTURE BoS: Bullish BoS = close breaks above recent swing high. Bearish BoS = close breaks below recent swing low
+3. CHANGE OF CHARACTER CHoCH: In downtrend price breaks swing high = bullish reversal. In uptrend price breaks swing low = bearish reversal
+4. FAIR VALUE GAP FVG: 3-candle pattern. Bullish FVG = candle 1 high to candle 3 low gap. Bearish FVG = candle 1 low to candle 3 high gap. Minimum 5 pips gap
+5. ORDER BLOCK: Last bearish candle before strong bullish move = bullish OB. Last bullish candle before strong bearish move = bearish OB
+6. ENTRY: Only enter when price pulls back INTO the FVG or Order Block after a BoS or CHoCH
+7. STOP LOSS: ATR 14 multiplied by 2.0 from entry
+8. TAKE PROFIT 1: ATR 14 multiplied by 2.0 from entry
+9. TAKE PROFIT 2: ATR 14 multiplied by 3.5 from entry
+10. TAKE PROFIT 3: ATR 14 multiplied by 5.0 from entry
+11. KILL ZONES: London session 8 to 12 GMT and New York session 13 to 19 GMT only
+12. NO SIGNAL if price is not in a valid FVG or OB pullback zone
 
-Based on what you see in this chart, simulate exactly what ULTRAVENOM AI EA would do.
-
-You MUST respond with ONLY a JSON object. No text before or after. No markdown. Just raw JSON starting with { and ending with }.
+Respond with ONLY a raw JSON object. No markdown. No explanation. No text before or after. Start with { and end with }.
 
 {
-  "pair": "READ the exact instrument name visible in the chart image",
+  "pair": "exact instrument name from chart",
   "timeframe": "M15",
   "direction": "BUY or SELL or NO SIGNAL",
-  "marketStructure": "BULLISH or BEARISH or RANGING — based on price vs SMA 80",
-  "structureBreak": "Describe the BoS or CHoCH detected — e.g. Bullish BoS: price broke above swing high at 1.2345",
-  "fvgZone": "Describe the FVG zone detected — upper and lower levels e.g. FVG between 1.2310 and 1.2325",
-  "orderBlock": "Describe the Order Block detected — upper and lower levels e.g. Bullish OB between 1.2290 and 1.2310",
-  "entryZone": "Price level where EA would enter — inside the FVG or OB zone e.g. 1.2315",
-  "entryPrice": "Exact entry price level",
-  "stopLoss": "Exact SL price — ATR x 2.0 below entry for BUY or above entry for SELL",
-  "takeProfit1": "TP1 price — ATR x 2.0 from entry (conservative, 1:1 RR)",
-  "takeProfit2": "TP2 price — ATR x 3.5 from entry (main target, 1:1.75 RR)",
-  "takeProfit3": "TP3 price — ATR x 5.0 from entry (EA full target, 1:2.5 RR)",
+  "marketStructure": "BULLISH or BEARISH or RANGING",
+  "structureBreak": "describe the BoS or CHoCH visible on the chart with price levels",
+  "fvgZone": "describe the FVG zone with upper and lower price levels",
+  "orderBlock": "describe the Order Block zone with upper and lower price levels",
+  "entryPrice": "exact entry price inside the FVG or OB zone",
+  "stopLoss": "exact SL price using ATR x 2.0",
+  "takeProfit1": "TP1 price ATR x 2.0 from entry",
+  "takeProfit2": "TP2 price ATR x 3.5 from entry",
+  "takeProfit3": "TP3 price ATR x 5.0 from entry",
   "riskReward": "1:2.5",
   "killZone": "LONDON or NEW YORK or OUTSIDE KILL ZONE",
   "sentiment": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
   "sentimentScore": 50,
-  "priceAction": "2-3 sentences on market structure, BoS or CHoCH location, and pullback status",
-  "supportResistance": "2-3 sentences on the FVG and Order Block zones visible on the chart",
-  "technicalIndicators": "2-3 sentences on SMA 80 position, ATR value estimate, and price relationship to SMA",
-  "marketSentiment": "2-3 sentences on overall ICT bias and whether a valid pullback entry exists",
-  "summary": "3-4 sentences — exactly what ULTRAVENOM AI would do: entry zone, SL, TP levels, and any reasons it would NOT trade",
+  "priceAction": "2-3 sentences on market structure BoS or CHoCH location and pullback status",
+  "supportResistance": "2-3 sentences on FVG and Order Block zones visible on the chart",
+  "technicalIndicators": "2-3 sentences on SMA 80 position ATR estimate and price relationship",
+  "marketSentiment": "2-3 sentences on ICT bias and whether a valid pullback entry exists",
+  "summary": "3-4 sentences on what ULTRAVENOM AI would do including entry zone SL all 3 TP levels and any reasons it would not trade",
   "tags": ["tag1", "tag2", "tag3"]
 }`
 
@@ -122,7 +113,6 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
         throw new Error(data.error || 'API request failed')
       }
 
-      // api/analyze.js returns { result: { ...parsed chart data } }
       setResult(data.result)
 
     } catch (err) {
@@ -131,8 +121,6 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
       setLoading(false)
     }
   }
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
 
   function getSentimentColor(score) {
     if (score >= 65) return 'var(--green)'
@@ -148,15 +136,13 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
 
   function getTagClass(tag) {
     const t = tag.toLowerCase()
-    if (/bull|break|long|uptrend|buy|strong/.test(t)) return styles.tagBull
+    if (/bull|break|long|uptrend|buy|strong|bos|choch/.test(t)) return styles.tagBull
     if (/bear|sell|down|short|weak|reversal/.test(t)) return styles.tagBear
-    if (/neutral|range|consolidat/.test(t)) return styles.tagNeutral
+    if (/neutral|range|consolidat|outside/.test(t)) return styles.tagNeutral
     return styles.tagCyan
   }
 
   const isBuy = result?.direction === 'BUY'
-
-  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className={styles.wrapper}>
@@ -183,14 +169,14 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
 
       {/* Hero */}
       <div className={styles.hero}>
-        <div className={styles.eyebrow}>◈ Precision Trade Intelligence</div>
+        <div className={styles.eyebrow}>◈ ULTRAVENOM AI — ICT Smart Money</div>
         <h1 className={styles.heroTitle}>
           Drop Your Chart,<br />
           <span className={styles.grad}>Get Your Trade Plan</span>
         </h1>
         <p className={styles.heroSub}>
-          Upload any trading chart for instant AI-powered entry, stop loss,
-          take profit levels and full market analysis.
+          Upload any M15 chart for instant AI-powered FVG, Order Block,
+          BoS and CHoCH analysis with entry, SL and all 3 take profit levels.
         </p>
       </div>
 
@@ -210,8 +196,8 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
         ) : (
           <div className={styles.dropContent}>
             <div className={styles.dropIcon}>📊</div>
-            <div className={styles.dropTitle}>Drop your chart here</div>
-            <div className={styles.dropSub}>Supports PNG, JPG, WEBP — any timeframe, any pair</div>
+            <div className={styles.dropTitle}>Drop your M15 chart here</div>
+            <div className={styles.dropSub}>Supports PNG, JPG, WEBP — any pair</div>
             <button
               className={styles.browseBtn}
               onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}
@@ -236,7 +222,7 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
           onClick={analyzeChart}
           disabled={!imageBase64 || loading}
         >
-          {loading ? 'Navigating...' : '🧭 Analyze Chart'}
+          {loading ? 'Analysing...' : '🧭 Analyze Chart'}
         </button>
       </div>
 
@@ -249,7 +235,7 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
           <div className={styles.pulseLoader}>
             <div className={styles.pulseCore} />
           </div>
-          <div className={styles.loadingText}>Navigator AI is reading your chart...</div>
+          <div className={styles.loadingText}>ULTRAVENOM AI is reading your chart...</div>
         </div>
       )}
 
@@ -263,6 +249,7 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {result.pair      && <span className={styles.pairBadge}>{result.pair}</span>}
               {result.timeframe && <span className={styles.tfBadge}>{result.timeframe}</span>}
+              {result.killZone  && <span className={styles.tfBadge}>{result.killZone}</span>}
               <span className={styles.badge}>LIVE RESULT</span>
             </div>
           </div>
@@ -273,7 +260,7 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
               <div>
                 <div className={styles.tradeLabel}>Signal</div>
                 <div className={`${styles.directionBadge} ${isBuy ? styles.directionBuy : styles.directionSell}`}>
-                  {isBuy ? '▲ BUY' : '▼ SELL'}
+                  {isBuy ? '▲ BUY' : result?.direction === 'SELL' ? '▼ SELL' : '— NO SIGNAL'}
                 </div>
               </div>
               <div>
@@ -301,19 +288,19 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
               </div>
               <div className={styles.levelRow}>
                 <div className={styles.levelDot} style={{ background: 'var(--green)', opacity: 0.6 }} />
-                <div className={styles.levelLabel}>TP 1 <span className={styles.tpHint}>(Conservative)</span></div>
+                <div className={styles.levelLabel}>TP 1 <span className={styles.tpHint}>(ATR x2)</span></div>
                 <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.2)' }} />
                 <div className={styles.levelPrice} style={{ color: 'var(--green)', opacity: 0.7 }}>{result.takeProfit1 ?? '—'}</div>
               </div>
               <div className={styles.levelRow}>
                 <div className={styles.levelDot} style={{ background: 'var(--green)' }} />
-                <div className={styles.levelLabel}>TP 2 <span className={styles.tpHint}>(Main Target)</span></div>
+                <div className={styles.levelLabel}>TP 2 <span className={styles.tpHint}>(ATR x3.5)</span></div>
                 <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.3)' }} />
                 <div className={styles.levelPrice} style={{ color: 'var(--green)' }}>{result.takeProfit2 ?? '—'}</div>
               </div>
               <div className={styles.levelRow}>
                 <div className={styles.levelDot} style={{ background: 'var(--green)', boxShadow: '0 0 8px var(--green)' }} />
-                <div className={styles.levelLabel}>TP 3 <span className={styles.tpHint}>(Extended)</span></div>
+                <div className={styles.levelLabel}>TP 3 <span className={styles.tpHint}>(ATR x5)</span></div>
                 <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.4)' }} />
                 <div className={styles.levelPrice} style={{ color: 'var(--green)', fontWeight: 800 }}>{result.takeProfit3 ?? '—'}</div>
               </div>
@@ -370,7 +357,7 @@ You MUST respond with ONLY a JSON object. No text before or after. No markdown. 
 
           {/* Summary */}
           <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>✦ AI Trade Rationale &amp; Risk Warning</div>
+            <div className={styles.summaryLabel}>✦ ULTRAVENOM AI — Trade Rationale & Risk Warning</div>
             <div className={styles.summaryText}>{result.summary}</div>
           </div>
 
