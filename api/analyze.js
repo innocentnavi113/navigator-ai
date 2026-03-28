@@ -19,7 +19,7 @@ export default async function handler(req, res) {
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        openrouter/free
+        model: 'google/gemini-2.0-flash-001',
         messages: [
           {
             role: 'user',
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return res.status(500).json({
-        error: `Model returned unexpected content: "${text.slice(0, 200)}"`
+        error: `Model returned: "${text.slice(0, 200)}"`
       })
     }
     const result = JSON.parse(jsonMatch[0].trim())
