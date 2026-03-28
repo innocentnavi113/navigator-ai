@@ -19,7 +19,7 @@ export default async function handler(req, res) {
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-001',
+        model: 'anthropic/claude-3-haiku',
         messages: [
           {
             role: 'user',
