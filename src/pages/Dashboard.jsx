@@ -12,7 +12,6 @@ export default function Dashboard({ session }) {
   const [error, setError]             = useState('')
   const fileInputRef = useRef(null)
 
-  // Get the user's name from metadata, fall back to first part of email
   const userName =
     session?.user?.user_metadata?.full_name ||
     session?.user?.email?.split('@')[0] ||
@@ -36,8 +35,11 @@ export default function Dashboard({ session }) {
 
   function clearImage(e) {
     e.stopPropagation()
-    setImageBase64(null); setImageType(null); setPreviewUrl(null)
-    setResult(null); setError('')
+    setImageBase64(null)
+    setImageType(null)
+    setPreviewUrl(null)
+    setResult(null)
+    setError('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -57,7 +59,9 @@ export default function Dashboard({ session }) {
 
   async function analyzeChart() {
     if (!imageBase64) return
-    setLoading(true); setResult(null); setError('')
+    setLoading(true)
+    setResult(null)
+    setError('')
 
     const prompt = `Analyze this trading chart. You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
 
@@ -90,19 +94,13 @@ export default function Dashboard({ session }) {
 
       const data = await response.json()
 
-      // Handle error responses from our API route
       if (!response.ok) {
         throw new Error(data.error || 'API request failed')
       }
 
-      // Extract the text from Claude's response
-      const text = data.content?.map(b => b.text || '').join('') || ''
+      // api/analyze.js returns { result: { ...parsed chart data } }
+      setResult(data.result)
 
-      // Find and parse the JSON object from the response
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) throw new Error(`Model returned: "${text.slice(0, 200)}"`)
-
-      setResult(JSON.parse(jsonMatch[0].trim()))
     } catch (err) {
       setError('Analysis failed: ' + (err.message || 'Unknown error.'))
     } finally {
@@ -153,7 +151,9 @@ export default function Dashboard({ session }) {
             </div>
             <span className={styles.userName}>{userName}</span>
           </div>
-          <button className={styles.signOutBtn} onClick={handleSignOut}>Sign Out</button>
+          <button className={styles.signOutBtn} onClick={handleSignOut}>
+            Sign Out
+          </button>
         </div>
       </header>
 
@@ -222,7 +222,9 @@ export default function Dashboard({ session }) {
       {/* Loading */}
       {loading && (
         <div className={styles.loadingWrap}>
-          <div className={styles.pulseLoader}><div className={styles.pulseCore} /></div>
+          <div className={styles.pulseLoader}>
+            <div className={styles.pulseCore} />
+          </div>
           <div className={styles.loadingText}>Navigator AI is reading your chart...</div>
         </div>
       )}
@@ -241,7 +243,7 @@ export default function Dashboard({ session }) {
             </div>
           </div>
 
-          {/* ── TRADE SETUP CARD ── */}
+          {/* Trade Setup Card */}
           <div className={`${styles.tradeCard} ${isBuy ? styles.tradeCardBuy : styles.tradeCardSell}`}>
             <div className={styles.tradeCardTop}>
               <div>
@@ -298,10 +300,7 @@ export default function Dashboard({ session }) {
           <div className={styles.sentimentCard}>
             <div className={styles.sentimentLabel}>Overall Market Sentiment</div>
             <div className={styles.sentimentRow}>
-              <div
-                className={styles.sentimentValue}
-                style={{ color: getSentimentColor(result.sentimentScore) }}
-              >
+              <div className={styles.sentimentValue} style={{ color: getSentimentColor(result.sentimentScore) }}>
                 {result.sentiment}
               </div>
               <div className={styles.sentimentBarWrap}>
