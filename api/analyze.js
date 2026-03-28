@@ -55,10 +55,10 @@ export default async function handler(req, res) {
     // Get raw text from model
     let text = data.choices?.[0]?.message?.content || ''
 
-    // Strip markdown code fences if present
+    // Strip markdown code fences
     text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
 
-    // Extract JSON object from text
+    // Extract the JSON object
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       return res.status(500).json({
@@ -68,26 +68,60 @@ export default async function handler(req, res) {
 
     let jsonStr = jsonMatch[0]
 
-    // Fix common JSON issues from AI models:
-    // 1. Replace single quotes with double quotes for keys and string values
-    jsonStr = jsonStr.replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":')
+    // ── Clean up common AI JSON mistakes ──────────────────────────────
 
-    // 2. Replace single-quoted string values with double-quoted
-    jsonStr = jsonStr.replace(/:\s*'([^']*)'/g, ': "$1"')
+    // Replace curly/smart quotes with straight quotes
+    jsonStr = jsonStr
+      .replace(/[\u201C\u201D]/g, '"')  // " "
+      .replace(/[\u2018\u2019]/g, "'")  // ' '
 
-    // 3. Remove trailing commas before } or ]
+    // Remove trailing commas before } or ]
     jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1')
 
-    // 4. Replace any remaining unescaped newlines inside strings
+    // Replace literal newlines inside strings with a space
     jsonStr = jsonStr.replace(/\n/g, ' ')
+
+    // The main fix: clean double quotes INSIDE string values
+    // Strategy: parse each string value and replace inner " with '
+    jsonStr = jsonStr.replace(/:\s*"([\s\S]*?)(?<!\\)"(?=\s*[,}\]])/g, (match, inner) => {
+      // Replace any unescaped double quotes inside the value with single quotes
+      const cleaned = inner.replace(/(?<!\\)"/g, "'")
+      return `: "${cleaned}"`
+    })
 
     let result
     try {
       result = JSON.parse(jsonStr)
-    } catch (parseErr) {
-      return res.status(500).json({
-        error: `JSON parse failed: ${parseErr.message}. Raw: "${jsonStr.slice(0, 300)}"`
-      })
+    } catch (e) {
+      // Last resort: try to extract key fields manually
+      const extract = (key) => {
+        const m = jsonStr.match(new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`) )
+        return m ? m[1] : '—'
+      }
+      result = {
+        pair:            extract('pair'),
+        timeframe:       extract('timeframe'),
+        direction:       extract('direction'),
+        marketStructure: extract('marketStructure'),
+        structureBreak:  extract('structureBreak'),
+        fvgZone:         extract('fvgZone'),
+        orderBlock:      extract('orderBlock'),
+        entryPrice:      extract('entryPrice'),
+        stopLoss:        extract('stopLoss'),
+        takeProfit1:     extract('takeProfit1'),
+        takeProfit2:     extract('takeProfit2'),
+        takeProfit3:     extract('takeProfit3'),
+        riskReward:      extract('riskReward'),
+        killZone:        extract('killZone'),
+        sentiment:       extract('sentiment'),
+        sentimentScore:  50,
+        priceAction:     extract('priceAction'),
+        supportResistance: extract('supportResistance'),
+        technicalIndicators: extract('technicalIndicators'),
+        marketSentiment: extract('marketSentiment'),
+        summary:         extract('summary'),
+        tags:            ['ICT', 'Smart Money']
+      }
     }
 
     return res.status(200).json({ result })
