@@ -23,7 +23,7 @@ export default async function handler(req, res) {
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro-exp-03-25:free',
+        model: 'meta-llama/llama-4-maverick:free',
         messages: [
           {
             role: 'user',
