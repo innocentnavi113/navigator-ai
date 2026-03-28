@@ -2,17 +2,13 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
-
   const { imageBase64, imageType, prompt } = req.body
-
   if (!imageBase64 || !imageType || !prompt) {
     return res.status(400).json({ error: 'Missing imageBase64, imageType, or prompt' })
   }
-
   if (!process.env.OPENROUTER_API_KEY) {
     return res.status(500).json({ error: 'OPENROUTER_API_KEY is not set in environment variables' })
   }
-
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -23,7 +19,7 @@ export default async function handler(req, res) {
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-4-maverick:free',
+        model: 'mistralai/mistral-small-3.1-24b-instruct:free',
         messages: [
           {
             role: 'user',
@@ -43,15 +39,12 @@ export default async function handler(req, res) {
         ]
       })
     })
-
     const data = await response.json()
-
     if (!response.ok) {
       return res.status(response.status).json({
         error: data.error?.message || 'OpenRouter API error'
       })
     }
-
     const text = data.choices?.[0]?.message?.content || ''
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
@@ -59,10 +52,8 @@ export default async function handler(req, res) {
         error: `Model returned unexpected content: "${text.slice(0, 200)}"`
       })
     }
-
     const result = JSON.parse(jsonMatch[0].trim())
     return res.status(200).json({ result })
-
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Internal server error' })
   }
