@@ -63,35 +63,50 @@ export default function Dashboard({ session }) {
     setResult(null)
     setError('')
 
-       const prompt = `You are an ICT/Smart Money trading analyst. Analyze this chart using the following strategy:
+          const prompt = `You are NAVI V3 — an AI trading analyst based on the NAVI V3 Expert Advisor strategy. Analyze this chart using the exact same logic as the EA.
 
-1. First establish the BIAS (bullish or bearish) from the higher timeframe structure
-2. Align to the structural timeframe and confirm with CISD (Change in State of Delivery)
-3. Identify key entry levels: Fair Value Gaps (FVGs), Significant highs/lows, Order Blocks
+The EA uses these indicators and rules:
+- ENTRY: AMA (fast, period 1) crossover above/below LWMA (slow, period 50) on M5
+- CONFIRMATION: ADX > 22 with +DI/-DI direction alignment
+- MOMENTUM: MACD (8,17,9) must align with direction
+- TREND STRENGTH: ADX must be gaining (not falling) — consecutive rising bars
+- RSI (14): Must be above 30 for BUY, below 70 for SELL
+- ACCELERATOR OSCILLATOR: Must align with trade direction
+- FRACTALS: Entry triggered on first fractal after crossover
+- SUPPORT/RESISTANCE: Price must not be blocked at key S/R levels
+- ATR (14): Used for SL (x2) and TP (x5) calculation
+- BREAKEVEN: Triggered at 3x ATR profit
+- RSI EXIT: Close trade if RSI reaches extreme (70/30) with profit > 300 pips
+- AGGRESSIVE MODE: Requires ADX > 20, RSI > 55 bull / < 45 bear
 
-You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
+Based on what you see in the chart, simulate what NAVI V3 would do.
+
+You MUST respond with ONLY a JSON object. No text before or after. No markdown. Just raw JSON starting with { and ending with }.
 
 {
-  "pair": "READ the exact instrument name from the chart label or title visible in the image. Do not guess.",
-  "timeframe": "detected timeframe e.g. 15M",
-  "direction": "BUY or SELL",
-  "bias": "Bullish or Bearish based on higher timeframe structure",
-  "cisd": "Describe the Change in State of Delivery confirmation seen on the chart",
-  "sentiment": "Bullish or Bearish or Neutral or Strongly Bullish or Strongly Bearish",
+  "pair": "READ the exact instrument name visible in the chart image",
+  "timeframe": "detected timeframe e.g. M5",
+  "direction": "BUY or SELL or NO SIGNAL",
+  "crossover": "Describe the AMA/LWMA crossover status — bullish cross, bearish cross, or no cross",
+  "adxStatus": "ADX value estimate and whether it is GAINING or LOSING or NEUTRAL",
+  "macdAlignment": "ALIGNED or NOT ALIGNED with direction",
+  "rsiValue": "estimated RSI value and status",
+  "fractalSignal": "Describe any fractal pattern visible after the crossover",
+  "sentiment": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
   "sentimentScore": 50,
-  "entryPrice": "price level",
-  "stopLoss": "price level - below/above the order block or significant low/high",
-  "takeProfit1": "price level - nearest FVG or significant level",
-  "takeProfit2": "price level - mid structural target",
-  "takeProfit3": "price level - ultimate structural target",
-  "riskReward": "1:2",
-  "fairValueGaps": "Describe any FVGs visible on the chart and their price levels",
-  "orderBlocks": "Describe any order blocks visible and their significance",
-  "priceAction": "2-3 sentences on market structure, CISD, and delivery patterns",
-  "supportResistance": "2-3 sentences on significant highs/lows and key structural levels",
-  "technicalIndicators": "2-3 sentences on any visible indicators supporting the bias",
-  "marketSentiment": "2-3 sentences on overall smart money sentiment and institutional bias",
-  "summary": "3-4 sentences covering the bias, CISD confirmation, entry rationale, and risk management",
+  "entryPrice": "price level based on current ask/bid",
+  "stopLoss": "price level — ATR x2 from entry",
+  "takeProfit1": "price level — ATR x2 (conservative)",
+  "takeProfit2": "price level — ATR x3.5 (main target)",
+  "takeProfit3": "price level — ATR x5 (EA full target)",
+  "breakevenLevel": "price level where EA would move SL to breakeven (ATR x3)",
+  "riskReward": "1:2.5",
+  "srAnalysis": "Describe any visible support or resistance levels blocking or confirming the trade",
+  "priceAction": "2-3 sentences on M5 candle structure, crossover bar, and fractal formation",
+  "supportResistance": "2-3 sentences on key S/R levels the EA would detect",
+  "technicalIndicators": "2-3 sentences on ADX strength, MACD alignment, RSI, and AC oscillator readings",
+  "marketSentiment": "2-3 sentences on overall trend bias and whether aggressive mode would activate",
+  "summary": "3-4 sentences — what NAVI V3 EA would do on this chart: entry signal, confirmation status, SL/TP placement, and any filters that would block the trade",
   "tags": ["tag1", "tag2", "tag3"]
 }`
 
