@@ -1,126 +1,41 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { supabase } from '../supabase'
 import styles from './Dashboard.module.css'
 
+const INTERVALS = ['1min','5min','15min','30min','1h','2h','4h','1day']
+
+const POPULAR = [
+  'EUR/USD','GBP/USD','USD/JPY','XAU/USD',
+  'BTC/USD','ETH/USD','US30','NAS100'
+]
+
 export default function Dashboard({ session }) {
-  const [imageBase64, setImageBase64] = useState(null)
-  const [imageType, setImageType]     = useState(null)
-  const [previewUrl, setPreviewUrl]   = useState(null)
-  const [dragOver, setDragOver]       = useState(false)
-  const [loading, setLoading]         = useState(false)
-  const [result, setResult]           = useState(null)
-  const [error, setError]             = useState('')
-  const fileInputRef = useRef(null)
+  const [symbol,   setSymbol]   = useState('')
+  const [interval, setInterval] = useState('15min')
+  const [loading,  setLoading]  = useState(false)
+  const [result,   setResult]   = useState(null)
+  const [error,    setError]    = useState('')
 
   const userName =
     session?.user?.user_metadata?.full_name ||
     session?.user?.email?.split('@')[0] ||
     'Trader'
 
-  function loadFile(file) {
-    if (!file || !file.type.startsWith('image/')) return
-    const reader = new FileReader()
-    reader.onload = ev => {
-      const dataUrl = ev.target.result
-      setImageType(file.type)
-      setImageBase64(dataUrl.split(',')[1])
-      setPreviewUrl(dataUrl)
-      setResult(null)
-      setError('')
-    }
-    reader.readAsDataURL(file)
-  }
-
-  function clearImage(e) {
-    e.stopPropagation()
-    setImageBase64(null)
-    setImageType(null)
-    setPreviewUrl(null)
-    setResult(null)
-    setError('')
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  function onDrop(e) {
-    e.preventDefault()
-    setDragOver(false)
-    loadFile(e.dataTransfer.files[0])
-  }
-
   async function handleSignOut() {
     await supabase.auth.signOut()
   }
 
-  async function analyzeChart() {
-    if (!imageBase64) return
+  async function analyzeSymbol() {
+    if (!symbol.trim()) return
     setLoading(true)
     setResult(null)
     setError('')
-
-    const prompt = `You are NAVIGATOR AI — an advanced multi-strategy scalping analyst powered by machine learning and fractal pattern recognition. Analyze this chart using ALL of the following techniques simultaneously:
-
-SECTION 1 — FRACTAL PATTERN ANALYSIS (based on Auto Fractal indicator logic):
-Using the same logic as the Auto Fractal Pine Script indicator by TheUltimator5:
-- Scan the visible chart history for the most correlated historical price pattern that matches the most recent price segment (last 20 bars)
-- Calculate a Pearson correlation score between 0 and 1 for the best matching historical segment
-- Based on what followed that historical pattern, project the likely future price direction and percentage change for the next 20 bars
-- State whether the fractal projection is BULLISH or BEARISH
-- Rate the correlation confidence as STRONG above 0.95, MODERATE 0.85 to 0.95, or WEAK below 0.85
-
-SECTION 2 — SCALPING STRATEGY ANALYSIS:
-1. EMA/MA CROSSOVERS: Detect fast EMA crossing slow EMA. EMA 8/21 or EMA 20/50 crossover. State direction and strength.
-2. SUPPORT AND RESISTANCE BREAKOUTS: Identify key S/R levels. Detect breakouts. Rate as STRONG, MODERATE or WEAK.
-3. RSI ANALYSIS: Estimate RSI from price momentum. Flag overbought above 70, oversold below 30, or divergence.
-4. CANDLESTICK PATTERNS: Identify exact pattern — Bullish Engulfing, Bearish Engulfing, Pin Bar, Hammer, Shooting Star, Doji, Morning Star, Evening Star, Inside Bar, or Marubozu.
-5. MULTI-TIMEFRAME BIAS: Higher timeframe trend direction and whether the scalp aligns with it.
-6. ML PATTERN SCORE: Rate overall setup probability 0 to 100 based on confluence of ALL signals including fractal match.
-7. TREND DIRECTION AND STRENGTH: Strongly Bullish, Bullish, Neutral, Bearish, or Strongly Bearish. Strength as STRONG, MODERATE, or WEAK.
-8. ENTRY CALCULATION: Entry at pattern confirmation. SL below pattern low for BUY or above pattern high for SELL. TP1 at 1:1, TP2 at 1:2, TP3 at 1:3 RR.
-
-Respond with ONLY a raw JSON object. No markdown. No explanation. No text before or after. Start with { and end with }.
-
-{
-  "pair": "exact instrument name from the chart",
-  "timeframe": "detected timeframe",
-  "direction": "BUY or SELL or NO SIGNAL",
-  "setupName": "name of detected pattern or setup e.g. Bullish Engulfing at Support with Fractal Confirmation",
-  "mlScore": 75,
-  "trendDirection": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
-  "trendStrength": "STRONG or MODERATE or WEAK",
-  "fractals": {
-    "correlationScore": 0.97,
-    "correlationStrength": "STRONG or MODERATE or WEAK",
-    "matchedPattern": "describe what historical pattern was matched e.g. similar consolidation breakout from 30 bars ago",
-    "projectionDirection": "BULLISH or BEARISH",
-    "projectedChangePercent": "estimated % price change for next 20 bars e.g. +1.8% or -0.9%",
-    "projectionSummary": "2 sentences describing what the fractal projects will happen next based on the matched historical segment"
-  },
-  "emaCrossover": "describe any EMA or MA crossover visible — type direction and bars since cross",
-  "srBreakout": "describe any support or resistance breakout — price level and breakout strength",
-  "rsiReading": "estimated RSI value and status and whether it confirms the signal",
-  "candlePattern": "exact candlestick pattern name detected and its location",
-  "multiTimeframeBias": "higher timeframe trend direction and whether this scalp aligns",
-  "entryPrice": "exact entry price level",
-  "stopLoss": "exact SL price level with reason",
-  "takeProfit1": "TP1 price at 1:1 risk reward",
-  "takeProfit2": "TP2 price at 1:2 risk reward",
-  "takeProfit3": "TP3 price at 1:3 risk reward",
-  "riskReward": "1:3",
-  "sentiment": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
-  "sentimentScore": 75,
-  "priceAction": "2-3 sentences on candlestick pattern detected trend and momentum",
-  "supportResistance": "2-3 sentences on key S/R levels breakouts and price reaction zones",
-  "technicalIndicators": "2-3 sentences on EMA crossover RSI reading and indicator confluence",
-  "marketSentiment": "2-3 sentences on ML score multi-timeframe bias and fractal projection alignment",
-  "summary": "3-4 sentences covering setup name signal direction entry SL all 3 TPs ML score fractal correlation and overall trade confidence",
-  "tags": ["tag1", "tag2", "tag3"]
-}`
 
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, imageType, prompt })
+        body: JSON.stringify({ symbol: symbol.trim().toUpperCase(), interval })
       })
 
       const data = await response.json()
@@ -156,28 +71,15 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
     return 'var(--pink)'
   }
 
-  function getFractalColor(dir) {
-    if (!dir) return 'var(--muted)'
-    return dir === 'BULLISH' ? 'var(--green)' : 'var(--pink)'
-  }
-
-  function getCorrColor(strength) {
-    if (!strength) return 'var(--muted)'
-    if (strength === 'STRONG') return 'var(--green)'
-    if (strength === 'MODERATE') return 'var(--amber)'
-    return 'var(--pink)'
-  }
-
   function getTagClass(tag) {
     const t = tag.toLowerCase()
-    if (/bull|buy|long|golden|break|engulf|hammer|support|fractal bull/.test(t)) return styles.tagBull
+    if (/bull|buy|long|golden|break|engulf|hammer|support/.test(t)) return styles.tagBull
     if (/bear|sell|short|death|breakdown|shooting|resist/.test(t)) return styles.tagBear
     if (/neutral|range|doji|inside|consolid/.test(t)) return styles.tagNeutral
     return styles.tagCyan
   }
 
   const isBuy = result?.direction === 'BUY'
-  const fractals = result?.fractals
 
   return (
     <div className={styles.wrapper}>
@@ -191,74 +93,69 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
         </div>
         <div className={styles.headerRight}>
           <div className={styles.userChip}>
-            <div className={styles.userAvatar}>
-              {userName.charAt(0).toUpperCase()}
-            </div>
+            <div className={styles.userAvatar}>{userName.charAt(0).toUpperCase()}</div>
             <span className={styles.userName}>{userName}</span>
           </div>
-          <button className={styles.signOutBtn} onClick={handleSignOut}>
-            Sign Out
-          </button>
+          <button className={styles.signOutBtn} onClick={handleSignOut}>Sign Out</button>
         </div>
       </header>
 
       {/* Hero */}
       <div className={styles.hero}>
-        <div className={styles.eyebrow}>◈ NAVIGATOR AI — Fractal + ML Scalping</div>
+        <div className={styles.eyebrow}>◈ NAVIGATOR AI — Real Data Scanner</div>
         <h1 className={styles.heroTitle}>
-          Drop Your Chart,<br />
-          <span className={styles.grad}>Get Your Trade Plan</span>
+          Enter Any Symbol,<br />
+          <span className={styles.grad}>Get Real AI Analysis</span>
         </h1>
         <p className={styles.heroSub}>
-          AI analyzes fractal pattern correlation, EMA crossovers, S/R breakouts,
-          RSI, candlestick patterns and multi-timeframe bias to find high-probability setups.
+          Live market data fetched automatically. Real EMA, RSI, ATR and S/R levels
+          calculated — no image uploads needed.
         </p>
       </div>
 
-      {/* Drop Zone */}
-      <div
-        className={`${styles.dropZone} ${dragOver ? styles.dragOver : ''} ${previewUrl ? styles.hasImage : ''}`}
-        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-        onClick={() => !previewUrl && fileInputRef.current?.click()}
-      >
-        {previewUrl ? (
-          <>
-            <img src={previewUrl} alt="Chart preview" className={styles.previewImg} />
-            <button className={styles.clearBtn} onClick={clearImage}>✕ Clear</button>
-          </>
-        ) : (
-          <div className={styles.dropContent}>
-            <div className={styles.dropIcon}>📊</div>
-            <div className={styles.dropTitle}>Drop your chart here</div>
-            <div className={styles.dropSub}>Supports PNG, JPG, WEBP — any timeframe, any pair</div>
-            <button
-              className={styles.browseBtn}
-              onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}
-            >
-              ⬆ Browse Chart
-            </button>
-          </div>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={e => loadFile(e.target.files[0])}
-        />
-      </div>
+      {/* Input Card */}
+      <div className={styles.inputCard}>
 
-      {/* Analyze button */}
-      <div className={styles.analyzeWrap}>
-        <button
-          className={styles.analyzeBtn}
-          onClick={analyzeChart}
-          disabled={!imageBase64 || loading}
-        >
-          {loading ? 'Analysing...' : '🧭 Analyze Chart'}
-        </button>
+        {/* Popular pairs */}
+        <div className={styles.popularRow}>
+          {POPULAR.map(p => (
+            <button
+              key={p}
+              className={`${styles.popularBtn} ${symbol === p ? styles.popularBtnActive : ''}`}
+              onClick={() => setSymbol(p)}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        {/* Symbol + Interval + Button */}
+        <div className={styles.inputRow}>
+          <input
+            className={styles.symbolInput}
+            type="text"
+            placeholder="e.g. EUR/USD, BTC/USD, XAU/USD"
+            value={symbol}
+            onChange={e => setSymbol(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && analyzeSymbol()}
+          />
+          <select
+            className={styles.intervalSelect}
+            value={interval}
+            onChange={e => setInterval(e.target.value)}
+          >
+            {INTERVALS.map(i => (
+              <option key={i} value={i}>{i}</option>
+            ))}
+          </select>
+          <button
+            className={styles.analyzeBtn}
+            onClick={analyzeSymbol}
+            disabled={!symbol.trim() || loading}
+          >
+            {loading ? 'Scanning...' : '🧭 Scan'}
+          </button>
+        </div>
       </div>
 
       {/* Error */}
@@ -267,10 +164,8 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
       {/* Loading */}
       {loading && (
         <div className={styles.loadingWrap}>
-          <div className={styles.pulseLoader}>
-            <div className={styles.pulseCore} />
-          </div>
-          <div className={styles.loadingText}>Navigator AI is scanning your chart...</div>
+          <div className={styles.pulseLoader}><div className={styles.pulseCore} /></div>
+          <div className={styles.loadingText}>Fetching live data and calculating indicators...</div>
         </div>
       )}
 
@@ -282,13 +177,14 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
           <div className={styles.resultsHeader}>
             <div className={styles.resultsTitle}>Analysis Complete</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {result.pair      && <span className={styles.pairBadge}>{result.pair}</span>}
-              {result.timeframe && <span className={styles.tfBadge}>{result.timeframe}</span>}
-              <span className={styles.badge}>LIVE RESULT</span>
+              <span className={styles.pairBadge}>{result.pair}</span>
+              <span className={styles.tfBadge}>{result.timeframe}</span>
+              {result.currentPrice && <span className={styles.tfBadge}>@ {result.currentPrice}</span>}
+              <span className={styles.badge}>LIVE DATA</span>
             </div>
           </div>
 
-          {/* ML Score + Setup Name */}
+          {/* ML Score + Setup */}
           <div className={styles.sentimentCard} style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
               <div>
@@ -318,60 +214,6 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
               </span>
             </div>
           </div>
-
-          {/* ── FRACTAL ANALYSIS CARD ── */}
-          {fractals && (
-            <div className={styles.sentimentCard} style={{ marginBottom: 16, borderColor: 'rgba(155,93,229,0.3)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <span style={{ fontSize: '1.1rem' }}>🔮</span>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.7rem', color: 'var(--violet)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  Auto Fractal Pattern Analysis
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 14 }}>
-                {/* Correlation Score */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--border)' }}>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.65rem', color: 'var(--muted)', marginBottom: 4 }}>CORRELATION</div>
-                  <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '1.4rem', color: getCorrColor(fractals.correlationStrength) }}>
-                    {fractals.correlationScore ?? '—'}
-                  </div>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.65rem', color: getCorrColor(fractals.correlationStrength) }}>
-                    {fractals.correlationStrength ?? '—'}
-                  </div>
-                </div>
-
-                {/* Projection Direction */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--border)' }}>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.65rem', color: 'var(--muted)', marginBottom: 4 }}>PROJECTION</div>
-                  <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '1.2rem', color: getFractalColor(fractals.projectionDirection) }}>
-                    {fractals.projectionDirection === 'BULLISH' ? '▲ BULLISH' : fractals.projectionDirection === 'BEARISH' ? '▼ BEARISH' : '— N/A'}
-                  </div>
-                </div>
-
-                {/* Projected % Change */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--border)' }}>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.65rem', color: 'var(--muted)', marginBottom: 4 }}>EST. MOVE</div>
-                  <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '1.4rem', color: getFractalColor(fractals.projectionDirection) }}>
-                    {fractals.projectedChangePercent ?? '—'}
-                  </div>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.65rem', color: 'var(--muted)' }}>next 20 bars</div>
-                </div>
-              </div>
-
-              {/* Matched pattern description */}
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.68rem', color: 'var(--muted)', marginBottom: 6 }}>MATCHED HISTORICAL PATTERN</div>
-              <div style={{ fontSize: '0.85rem', color: '#c9d1e8', lineHeight: 1.6, marginBottom: 10 }}>
-                {fractals.matchedPattern ?? '—'}
-              </div>
-
-              {/* Projection summary */}
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.68rem', color: 'var(--muted)', marginBottom: 6 }}>FRACTAL PROJECTION</div>
-              <div style={{ fontSize: '0.85rem', color: '#c9d1e8', lineHeight: 1.6 }}>
-                {fractals.projectionSummary ?? '—'}
-              </div>
-            </div>
-          )}
 
           {/* Trade Setup Card */}
           <div className={`${styles.tradeCard} ${isBuy ? styles.tradeCardBuy : styles.tradeCardSell}`}>
@@ -448,7 +290,7 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
           <div className={styles.grid}>
             <div className={`${styles.card} ${styles.cardCyan}`}>
               <div className={styles.cardIcon}>🕯️</div>
-              <div className={styles.cardTitle}>Candlestick Pattern</div>
+              <div className={styles.cardTitle}>Candle Pattern</div>
               <div className={styles.cardContent}>{result.priceAction}</div>
             </div>
             <div className={`${styles.card} ${styles.cardViolet}`}>
@@ -463,7 +305,7 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
             </div>
             <div className={`${styles.card} ${styles.cardAmber}`}>
               <div className={styles.cardIcon}>🤖</div>
-              <div className={styles.cardTitle}>ML Score &amp; MTF Bias</div>
+              <div className={styles.cardTitle}>ML Score &amp; Confluence</div>
               <div className={styles.cardContent}>{result.marketSentiment}</div>
             </div>
           </div>
