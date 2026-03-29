@@ -6,7 +6,7 @@ const INTERVALS = ['1min','5min','15min','30min','1h','2h','4h','1day']
 
 const POPULAR = [
   'EUR/USD','GBP/USD','USD/JPY','XAU/USD',
-  'BTC/USD','ETH/USD','US30','NAS100'
+  'BTC/USD','ETH/USD','SPY','ETH/BTC'
 ]
 
 export default function Dashboard({ session }) {
