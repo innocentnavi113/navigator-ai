@@ -57,46 +57,52 @@ export default function Dashboard({ session }) {
     setResult(null)
     setError('')
 
-    const prompt = `You are ULTRAVENOM AI — a trading analyst using ICT Smart Money concepts identical to the ULTRAVENOM AI scalper pro Expert Advisor on M15 charts.
+    const prompt = `You are NAVIGATOR AI — an advanced multi-timeframe scalping analyst powered by machine learning pattern recognition. Analyze this chart using all of the following techniques simultaneously:
 
-STRATEGY RULES:
-1. MARKET STRUCTURE: Price above SMA 80 = BULLISH. Price below SMA 80 = BEARISH
-2. BREAK OF STRUCTURE BoS: Bullish BoS = close breaks above recent swing high. Bearish BoS = close breaks below recent swing low
-3. CHANGE OF CHARACTER CHoCH: In downtrend price breaks swing high = bullish reversal. In uptrend price breaks swing low = bearish reversal
-4. FAIR VALUE GAP FVG: 3-candle pattern. Bullish FVG = candle 1 high to candle 3 low gap. Bearish FVG = candle 1 low to candle 3 high gap. Minimum 5 pips gap
-5. ORDER BLOCK: Last bearish candle before strong bullish move = bullish OB. Last bullish candle before strong bearish move = bearish OB
-6. ENTRY: Only enter when price pulls back INTO the FVG or Order Block after a BoS or CHoCH
-7. STOP LOSS: ATR 14 multiplied by 2.0 from entry
-8. TAKE PROFIT 1: ATR 14 multiplied by 2.0 from entry
-9. TAKE PROFIT 2: ATR 14 multiplied by 3.5 from entry
-10. TAKE PROFIT 3: ATR 14 multiplied by 5.0 from entry
-11. KILL ZONES: London session 8 to 12 GMT and New York session 13 to 19 GMT only
-12. NO SIGNAL if price is not in a valid FVG or OB pullback zone
+1. EMA/MA CROSSOVERS: Detect fast EMA crossing slow EMA or MA. EMA 8/21 crossover, EMA 20/50 crossover, or any visible MA cross. State direction and strength.
+
+2. SUPPORT AND RESISTANCE BREAKOUTS: Identify key horizontal S/R levels. Detect if price has broken out above resistance or below support. Rate breakout strength as STRONG, MODERATE or WEAK.
+
+3. RSI ANALYSIS: Estimate RSI value from price action momentum. Flag if overbought above 70, oversold below 30, or showing divergence. State if RSI confirms or rejects the trade signal.
+
+4. CANDLESTICK PATTERNS: Identify any of these patterns visible on the chart: Bullish Engulfing, Bearish Engulfing, Pin Bar, Hammer, Shooting Star, Doji, Morning Star, Evening Star, Inside Bar, Marubozu. State exact pattern name and location.
+
+5. MULTI-TIMEFRAME BIAS: Based on what is visible, state the higher timeframe trend direction and whether the scalp trade aligns with it.
+
+6. MACHINE LEARNING PATTERN SCORE: Rate the overall setup probability from 0 to 100 based on confluence of all signals. Above 70 is high probability. Below 40 is low probability.
+
+7. TREND DIRECTION AND STRENGTH: State if trend is Strongly Bullish, Bullish, Neutral, Bearish, or Strongly Bearish. Rate strength as STRONG, MODERATE, or WEAK.
+
+8. ENTRY CALCULATION: Entry price at the pattern confirmation level. Stop Loss below the pattern low for BUY or above pattern high for SELL. TP1 at 1:1 RR, TP2 at 1:2 RR, TP3 at 1:3 RR.
 
 Respond with ONLY a raw JSON object. No markdown. No explanation. No text before or after. Start with { and end with }.
 
 {
-  "pair": "exact instrument name from chart",
-  "timeframe": "M15",
+  "pair": "exact instrument name from the chart",
+  "timeframe": "detected timeframe",
   "direction": "BUY or SELL or NO SIGNAL",
-  "marketStructure": "BULLISH or BEARISH or RANGING",
-  "structureBreak": "describe the BoS or CHoCH visible on the chart with price levels",
-  "fvgZone": "describe the FVG zone with upper and lower price levels",
-  "orderBlock": "describe the Order Block zone with upper and lower price levels",
-  "entryPrice": "exact entry price inside the FVG or OB zone",
-  "stopLoss": "exact SL price using ATR x 2.0",
-  "takeProfit1": "TP1 price ATR x 2.0 from entry",
-  "takeProfit2": "TP2 price ATR x 3.5 from entry",
-  "takeProfit3": "TP3 price ATR x 5.0 from entry",
-  "riskReward": "1:2.5",
-  "killZone": "LONDON or NEW YORK or OUTSIDE KILL ZONE",
+  "setupName": "name of the detected pattern or setup e.g. Bullish Engulfing at Support or EMA 8/21 Golden Cross",
+  "mlScore": 75,
+  "trendDirection": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
+  "trendStrength": "STRONG or MODERATE or WEAK",
+  "emaCrossover": "describe any EMA or MA crossover visible — type direction and bars since cross",
+  "srBreakout": "describe any support or resistance breakout — price level and breakout strength",
+  "rsiReading": "estimated RSI value and status — overbought oversold or neutral and whether it confirms the signal",
+  "candlePattern": "exact candlestick pattern name detected and its location on the chart",
+  "multiTimeframeBias": "higher timeframe trend direction and whether this scalp aligns with it",
+  "entryPrice": "exact entry price level",
+  "stopLoss": "exact SL price level with reason e.g. below pin bar low at 1.2310",
+  "takeProfit1": "TP1 price at 1:1 risk reward",
+  "takeProfit2": "TP2 price at 1:2 risk reward",
+  "takeProfit3": "TP3 price at 1:3 risk reward",
+  "riskReward": "1:3",
   "sentiment": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
-  "sentimentScore": 50,
-  "priceAction": "2-3 sentences on market structure BoS or CHoCH location and pullback status",
-  "supportResistance": "2-3 sentences on FVG and Order Block zones visible on the chart",
-  "technicalIndicators": "2-3 sentences on SMA 80 position ATR estimate and price relationship",
-  "marketSentiment": "2-3 sentences on ICT bias and whether a valid pullback entry exists",
-  "summary": "3-4 sentences on what ULTRAVENOM AI would do including entry zone SL all 3 TP levels and any reasons it would not trade",
+  "sentimentScore": 75,
+  "priceAction": "2-3 sentences on the candlestick pattern detected trend direction and momentum",
+  "supportResistance": "2-3 sentences on key S/R levels breakouts and price reaction zones",
+  "technicalIndicators": "2-3 sentences on EMA/MA crossover RSI reading and indicator confluence",
+  "marketSentiment": "2-3 sentences on multi-timeframe bias and ML pattern probability score",
+  "summary": "3-4 sentences — the setup name signal direction entry SL all 3 TPs ML score and overall trade confidence rating",
   "tags": ["tag1", "tag2", "tag3"]
 }`
 
@@ -134,11 +140,17 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
     return 'linear-gradient(90deg, var(--amber), #ff9900)'
   }
 
+  function getMlScoreColor(score) {
+    if (score >= 70) return 'var(--green)'
+    if (score >= 50) return 'var(--amber)'
+    return 'var(--pink)'
+  }
+
   function getTagClass(tag) {
     const t = tag.toLowerCase()
-    if (/bull|break|long|uptrend|buy|strong|bos|choch/.test(t)) return styles.tagBull
-    if (/bear|sell|down|short|weak|reversal/.test(t)) return styles.tagBear
-    if (/neutral|range|consolidat|outside/.test(t)) return styles.tagNeutral
+    if (/bull|buy|long|golden|cross|break|engulf|hammer|support/.test(t)) return styles.tagBull
+    if (/bear|sell|short|death|cross|breakdown|shooting|resist/.test(t)) return styles.tagBear
+    if (/neutral|range|doji|inside|consolid/.test(t)) return styles.tagNeutral
     return styles.tagCyan
   }
 
@@ -169,14 +181,14 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
 
       {/* Hero */}
       <div className={styles.hero}>
-        <div className={styles.eyebrow}>◈ ULTRAVENOM AI — ICT Smart Money</div>
+        <div className={styles.eyebrow}>◈ ML-Powered Multi-Strategy Scalper</div>
         <h1 className={styles.heroTitle}>
           Drop Your Chart,<br />
           <span className={styles.grad}>Get Your Trade Plan</span>
         </h1>
         <p className={styles.heroSub}>
-          Upload any M15 chart for instant AI-powered FVG, Order Block,
-          BoS and CHoCH analysis with entry, SL and all 3 take profit levels.
+          AI analyzes EMA crossovers, S/R breakouts, RSI, candlestick patterns
+          and multi-timeframe bias to find high-probability scalping setups.
         </p>
       </div>
 
@@ -196,8 +208,8 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
         ) : (
           <div className={styles.dropContent}>
             <div className={styles.dropIcon}>📊</div>
-            <div className={styles.dropTitle}>Drop your M15 chart here</div>
-            <div className={styles.dropSub}>Supports PNG, JPG, WEBP — any pair</div>
+            <div className={styles.dropTitle}>Drop your chart here</div>
+            <div className={styles.dropSub}>Supports PNG, JPG, WEBP — any timeframe, any pair</div>
             <button
               className={styles.browseBtn}
               onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}
@@ -235,7 +247,7 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
           <div className={styles.pulseLoader}>
             <div className={styles.pulseCore} />
           </div>
-          <div className={styles.loadingText}>ULTRAVENOM AI is reading your chart...</div>
+          <div className={styles.loadingText}>Navigator AI is scanning your chart...</div>
         </div>
       )}
 
@@ -249,10 +261,51 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {result.pair      && <span className={styles.pairBadge}>{result.pair}</span>}
               {result.timeframe && <span className={styles.tfBadge}>{result.timeframe}</span>}
-              {result.killZone  && <span className={styles.tfBadge}>{result.killZone}</span>}
               <span className={styles.badge}>LIVE RESULT</span>
             </div>
           </div>
+
+          {/* ML Score + Setup Name */}
+          {(result.setupName || result.mlScore) && (
+            <div className={styles.sentimentCard} style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <div className={styles.sentimentLabel}>Detected Setup</div>
+                  <div style={{ fontSize: '1.1rem', fontFamily: "'Syne', sans-serif", fontWeight: 800, color: 'var(--cyan)' }}>
+                    {result.setupName ?? '—'}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className={styles.sentimentLabel}>ML Probability Score</div>
+                  <div style={{ fontSize: '2rem', fontFamily: "'Syne', sans-serif", fontWeight: 800, color: getMlScoreColor(result.mlScore ?? 50) }}>
+                    {result.mlScore ?? '—'}<span style={{ fontSize: '1rem', opacity: 0.6 }}>/100</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <div className={styles.sentimentBarWrap}>
+                  <div
+                    className={styles.sentimentBar}
+                    style={{
+                      width: `${result.mlScore ?? 50}%`,
+                      background: `linear-gradient(90deg, var(--violet), ${getMlScoreColor(result.mlScore ?? 50)})`
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.72rem', color: 'var(--muted)' }}>
+                  TREND: <span style={{ color: 'var(--text)' }}>{result.trendDirection ?? '—'}</span>
+                </span>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.72rem', color: 'var(--muted)' }}>
+                  STRENGTH: <span style={{ color: 'var(--text)' }}>{result.trendStrength ?? '—'}</span>
+                </span>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.72rem', color: 'var(--muted)' }}>
+                  MTF BIAS: <span style={{ color: 'var(--cyan)' }}>{result.multiTimeframeBias?.split(' ').slice(0,3).join(' ') ?? '—'}</span>
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Trade Setup Card */}
           <div className={`${styles.tradeCard} ${isBuy ? styles.tradeCardBuy : styles.tradeCardSell}`}>
@@ -288,19 +341,19 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
               </div>
               <div className={styles.levelRow}>
                 <div className={styles.levelDot} style={{ background: 'var(--green)', opacity: 0.6 }} />
-                <div className={styles.levelLabel}>TP 1 <span className={styles.tpHint}>(ATR x2)</span></div>
+                <div className={styles.levelLabel}>TP 1 <span className={styles.tpHint}>(1:1 RR)</span></div>
                 <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.2)' }} />
                 <div className={styles.levelPrice} style={{ color: 'var(--green)', opacity: 0.7 }}>{result.takeProfit1 ?? '—'}</div>
               </div>
               <div className={styles.levelRow}>
                 <div className={styles.levelDot} style={{ background: 'var(--green)' }} />
-                <div className={styles.levelLabel}>TP 2 <span className={styles.tpHint}>(ATR x3.5)</span></div>
+                <div className={styles.levelLabel}>TP 2 <span className={styles.tpHint}>(1:2 RR)</span></div>
                 <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.3)' }} />
                 <div className={styles.levelPrice} style={{ color: 'var(--green)' }}>{result.takeProfit2 ?? '—'}</div>
               </div>
               <div className={styles.levelRow}>
                 <div className={styles.levelDot} style={{ background: 'var(--green)', boxShadow: '0 0 8px var(--green)' }} />
-                <div className={styles.levelLabel}>TP 3 <span className={styles.tpHint}>(ATR x5)</span></div>
+                <div className={styles.levelLabel}>TP 3 <span className={styles.tpHint}>(1:3 RR)</span></div>
                 <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.4)' }} />
                 <div className={styles.levelPrice} style={{ color: 'var(--green)', fontWeight: 800 }}>{result.takeProfit3 ?? '—'}</div>
               </div>
@@ -334,30 +387,30 @@ Respond with ONLY a raw JSON object. No markdown. No explanation. No text before
           {/* 4-card grid */}
           <div className={styles.grid}>
             <div className={`${styles.card} ${styles.cardCyan}`}>
-              <div className={styles.cardIcon}>📊</div>
-              <div className={styles.cardTitle}>Market Structure & BoS/CHoCH</div>
+              <div className={styles.cardIcon}>🕯️</div>
+              <div className={styles.cardTitle}>Candlestick Pattern</div>
               <div className={styles.cardContent}>{result.priceAction}</div>
             </div>
             <div className={`${styles.card} ${styles.cardViolet}`}>
-              <div className={styles.cardIcon}>🧱</div>
-              <div className={styles.cardTitle}>FVG & Order Block Zones</div>
+              <div className={styles.cardIcon}>📐</div>
+              <div className={styles.cardTitle}>Support &amp; Resistance</div>
               <div className={styles.cardContent}>{result.supportResistance}</div>
             </div>
             <div className={`${styles.card} ${styles.cardPink}`}>
-              <div className={styles.cardIcon}>📈</div>
-              <div className={styles.cardTitle}>SMA 80 & ATR Readings</div>
+              <div className={styles.cardIcon}>📊</div>
+              <div className={styles.cardTitle}>EMA Cross &amp; RSI</div>
               <div className={styles.cardContent}>{result.technicalIndicators}</div>
             </div>
             <div className={`${styles.card} ${styles.cardAmber}`}>
-              <div className={styles.cardIcon}>🎯</div>
-              <div className={styles.cardTitle}>ICT Bias & Entry Signal</div>
+              <div className={styles.cardIcon}>🤖</div>
+              <div className={styles.cardTitle}>ML Score &amp; MTF Bias</div>
               <div className={styles.cardContent}>{result.marketSentiment}</div>
             </div>
           </div>
 
           {/* Summary */}
           <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>✦ ULTRAVENOM AI — Trade Rationale & Risk Warning</div>
+            <div className={styles.summaryLabel}>✦ AI Trade Rationale &amp; Risk Warning</div>
             <div className={styles.summaryText}>{result.summary}</div>
           </div>
 
