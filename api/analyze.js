@@ -18,239 +18,253 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ── Step 1: Fetch real candle data from Twelve Data ──────────────
-    const tdUrl = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}`
+    const cleanSymbol = symbol.trim().toUpperCase()
+
+    // Fetch candles from Twelve Data
+    const tdUrl = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(cleanSymbol)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
     const tdRes = await fetch(tdUrl)
     const tdData = await tdRes.json()
 
-    if (tdData.status === 'error' || !tdData.values) {
-      return res.status(400).json({ error: `Twelve Data error: ${tdData.message || 'Could not fetch data for ' + symbol}` })
+    if (tdData.status === 'error' || !tdData.values || !Array.isArray(tdData.values)) {
+      // Fallback: try without slash e.g. EURUSD
+      const fallback = cleanSymbol.replace('/', '')
+      const fbUrl = `https://api.twelvedata.com/time_series?symbol=${fallback}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
+      const fbRes = await fetch(fbUrl)
+      const fbData = await fbRes.json()
+      if (fbData.status === 'error' || !fbData.values) {
+        return res.status(400).json({
+          error: `Could not fetch data for "${cleanSymbol}". Try: EURUSD, BTC/USD, XAU/USD, SPY, AAPL`
+        })
+      }
+      return await processAndRespond(fbData, cleanSymbol, interval, res)
     }
 
-    // Parse candles — Twelve Data returns newest first, reverse to oldest first
-    const candles = tdData.values.reverse().map(c => ({
-      time:   c.datetime,
-      open:   parseFloat(c.open),
-      high:   parseFloat(c.high),
-      low:    parseFloat(c.low),
-      close:  parseFloat(c.close),
-      volume: parseFloat(c.volume || 0)
-    }))
+    return await processAndRespond(tdData, cleanSymbol, interval, res)
 
-    const closes = candles.map(c => c.close)
-    const highs  = candles.map(c => c.high)
-    const lows   = candles.map(c => c.low)
-    const n      = closes.length
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Internal server error' })
+  }
+}
 
-    // ── Step 2: Calculate real indicators ────────────────────────────
+async function processAndRespond(tdData, symbol, interval, res) {
 
-    // EMA calculation
-    function calcEMA(data, period) {
-      const k = 2 / (period + 1)
-      let ema = data.slice(0, period).reduce((a, b) => a + b, 0) / period
-      const result = new Array(period - 1).fill(null)
-      result.push(ema)
-      for (let i = period; i < data.length; i++) {
-        ema = data[i] * k + ema * (1 - k)
-        result.push(ema)
-      }
-      return result
+  // Parse candles oldest first
+  const candles = tdData.values.reverse().map(c => ({
+    time:   c.datetime,
+    open:   parseFloat(c.open),
+    high:   parseFloat(c.high),
+    low:    parseFloat(c.low),
+    close:  parseFloat(c.close),
+    volume: parseFloat(c.volume || 0)
+  }))
+
+  const closes = candles.map(c => c.close)
+  const highs  = candles.map(c => c.high)
+  const lows   = candles.map(c => c.low)
+  const n      = closes.length
+
+  // ── SMA (Simple Moving Average) ─────────────────────────────────────
+  function calcSMA(data, period) {
+    const result = new Array(period - 1).fill(null)
+    for (let i = period - 1; i < data.length; i++) {
+      const sum = data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0)
+      result.push(sum / period)
     }
+    return result
+  }
 
-    // RSI calculation
-    function calcRSI(data, period = 14) {
-      const result = new Array(period).fill(null)
-      let gains = 0, losses = 0
-      for (let i = 1; i <= period; i++) {
-        const diff = data[i] - data[i - 1]
-        if (diff > 0) gains += diff
-        else losses += Math.abs(diff)
-      }
-      let avgGain = gains / period
-      let avgLoss = losses / period
+  // ── RSI ──────────────────────────────────────────────────────────────
+  function calcRSI(data, period = 14) {
+    const result = new Array(period).fill(null)
+    let gains = 0, losses = 0
+    for (let i = 1; i <= period; i++) {
+      const diff = data[i] - data[i - 1]
+      if (diff > 0) gains += diff
+      else losses += Math.abs(diff)
+    }
+    let avgGain = gains / period
+    let avgLoss = losses / period
+    result.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss))
+    for (let i = period + 1; i < data.length; i++) {
+      const diff = data[i] - data[i - 1]
+      avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period
+      avgLoss = (avgLoss * (period - 1) + (diff < 0 ? Math.abs(diff) : 0)) / period
       result.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss))
-      for (let i = period + 1; i < data.length; i++) {
-        const diff = data[i] - data[i - 1]
-        avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period
-        avgLoss = (avgLoss * (period - 1) + (diff < 0 ? Math.abs(diff) : 0)) / period
-        result.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss))
-      }
-      return result
     }
+    return result
+  }
 
-    // ATR calculation
-    function calcATR(highs, lows, closes, period = 14) {
-      const trs = [highs[0] - lows[0]]
-      for (let i = 1; i < highs.length; i++) {
-        trs.push(Math.max(
-          highs[i] - lows[i],
-          Math.abs(highs[i] - closes[i - 1]),
-          Math.abs(lows[i] - closes[i - 1])
-        ))
-      }
-      let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period
-      const result = new Array(period - 1).fill(null)
+  // ── ATR ──────────────────────────────────────────────────────────────
+  function calcATR(highs, lows, closes, period = 14) {
+    const trs = [highs[0] - lows[0]]
+    for (let i = 1; i < highs.length; i++) {
+      trs.push(Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1])
+      ))
+    }
+    let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period
+    const result = new Array(period - 1).fill(null)
+    result.push(atr)
+    for (let i = period; i < trs.length; i++) {
+      atr = (atr * (period - 1) + trs[i]) / period
       result.push(atr)
-      for (let i = period; i < trs.length; i++) {
-        atr = (atr * (period - 1) + trs[i]) / period
-        result.push(atr)
-      }
-      return result
     }
+    return result
+  }
 
-    // Support & Resistance — find swing highs and lows
-    function calcSR(highs, lows, strength = 5) {
-      const supports = [], resistances = []
-      for (let i = strength; i < highs.length - strength; i++) {
-        let isHigh = true, isLow = true
-        for (let j = i - strength; j <= i + strength; j++) {
-          if (j === i) continue
-          if (highs[j] >= highs[i]) isHigh = false
-          if (lows[j] <= lows[i]) isLow = false
-        }
-        if (isHigh) resistances.push(highs[i])
-        if (isLow) supports.push(lows[i])
+  // ── Support & Resistance ─────────────────────────────────────────────
+  function calcSR(highs, lows, strength = 5) {
+    const supports = [], resistances = []
+    for (let i = strength; i < highs.length - strength; i++) {
+      let isHigh = true, isLow = true
+      for (let j = i - strength; j <= i + strength; j++) {
+        if (j === i) continue
+        if (highs[j] >= highs[i]) isHigh = false
+        if (lows[j] <= lows[i]) isLow = false
       }
-      return {
-        supports:     supports.slice(-3),
-        resistances:  resistances.slice(-3)
-      }
+      if (isHigh) resistances.push(highs[i])
+      if (isLow) supports.push(lows[i])
     }
+    return { supports: supports.slice(-3), resistances: resistances.slice(-3) }
+  }
 
-    // Candlestick pattern detection on last 3 candles
-    function detectPattern(candles) {
-      const last  = candles[candles.length - 1]
-      const prev  = candles[candles.length - 2]
-      const prev2 = candles[candles.length - 3]
-      if (!last || !prev || !prev2) return 'None detected'
+  // ── Candlestick Pattern Detection ────────────────────────────────────
+  function detectPattern(candles) {
+    const last  = candles[candles.length - 1]
+    const prev  = candles[candles.length - 2]
+    if (!last || !prev) return 'None detected'
+    const lastBody  = Math.abs(last.close - last.open)
+    const lastRange = last.high - last.low
+    const lowerWick = Math.min(last.open, last.close) - last.low
+    const upperWick = last.high - Math.max(last.open, last.close)
+    if (prev.close < prev.open && last.close > last.open &&
+        last.open < prev.close && last.close > prev.open) return 'Bullish Engulfing'
+    if (prev.close > prev.open && last.close < last.open &&
+        last.open > prev.close && last.close < prev.open) return 'Bearish Engulfing'
+    if (lowerWick > lastBody * 2 && upperWick < lastBody && last.close > last.open) return 'Bullish Pin Bar'
+    if (upperWick > lastBody * 2 && lowerWick < lastBody && last.close < last.open) return 'Bearish Shooting Star'
+    if (lastBody < lastRange * 0.1) return 'Doji'
+    if (lastBody > lastRange * 0.9) return last.close > last.open ? 'Bullish Marubozu' : 'Bearish Marubozu'
+    if (last.high < prev.high && last.low > prev.low) return 'Inside Bar'
+    return 'No clear pattern'
+  }
 
-      const lastBody  = Math.abs(last.close - last.open)
-      const lastRange = last.high - last.low
-      const prevBody  = Math.abs(prev.close - prev.open)
+  // ── Compute All Values ────────────────────────────────────────────────
+  const sma8   = calcSMA(closes, 8)
+  const sma21  = calcSMA(closes, 21)
+  const sma50  = calcSMA(closes, 50)
+  const rsi    = calcRSI(closes, 14)
+  const atr    = calcATR(highs, lows, closes, 14)
+  const sr     = calcSR(highs, lows, 5)
+  const pattern = detectPattern(candles)
 
-      // Bullish Engulfing
-      if (prev.close < prev.open && last.close > last.open &&
-          last.open < prev.close && last.close > prev.open)
-        return 'Bullish Engulfing'
+  const latestClose = closes[n - 1]
+  const latestSMA8  = sma8[n - 1]
+  const latestSMA21 = sma21[n - 1]
+  const latestSMA50 = sma50[n - 1]
+  const latestRSI   = rsi[n - 1]
+  const latestATR   = atr[n - 1]
+  const prevSMA8    = sma8[n - 2]
+  const prevSMA21   = sma21[n - 2]
 
-      // Bearish Engulfing
-      if (prev.close > prev.open && last.close < last.open &&
-          last.open > prev.close && last.close < prev.open)
-        return 'Bearish Engulfing'
+  // Decimal places based on price magnitude
+  const dp = latestClose < 10 ? 5 : latestClose < 1000 ? 4 : 2
 
-      // Pin Bar / Hammer (long lower wick)
-      const lowerWick = Math.min(last.open, last.close) - last.low
-      const upperWick = last.high - Math.max(last.open, last.close)
-      if (lowerWick > lastBody * 2 && upperWick < lastBody && last.close > last.open)
-        return 'Bullish Pin Bar / Hammer'
-      if (upperWick > lastBody * 2 && lowerWick < lastBody && last.close < last.open)
-        return 'Bearish Shooting Star'
-
-      // Doji
-      if (lastBody < lastRange * 0.1)
-        return 'Doji'
-
-      // Marubozu
-      if (lastBody > lastRange * 0.9) {
-        return last.close > last.open ? 'Bullish Marubozu' : 'Bearish Marubozu'
-      }
-
-      // Inside Bar
-      if (last.high < prev.high && last.low > prev.low)
-        return 'Inside Bar'
-
-      return 'No clear pattern'
+  // ── SMA Crossover Status ──────────────────────────────────────────────
+  const smaCrossover = (() => {
+    if (prevSMA8 !== null && prevSMA21 !== null) {
+      if (prevSMA8 <= prevSMA21 && latestSMA8 > latestSMA21)
+        return 'Bullish SMA 8/21 Golden Cross — just crossed up'
+      if (prevSMA8 >= prevSMA21 && latestSMA8 < latestSMA21)
+        return 'Bearish SMA 8/21 Death Cross — just crossed down'
     }
+    if (latestSMA8 > latestSMA21 && latestSMA21 > latestSMA50)
+      return 'Bullish alignment SMA 8 > 21 > 50 — strong uptrend'
+    if (latestSMA8 < latestSMA21 && latestSMA21 < latestSMA50)
+      return 'Bearish alignment SMA 8 < 21 < 50 — strong downtrend'
+    if (latestSMA8 > latestSMA21 && latestClose > latestSMA50)
+      return 'Mild bullish — SMA 8 above 21, price above SMA 50'
+    if (latestSMA8 < latestSMA21 && latestClose < latestSMA50)
+      return 'Mild bearish — SMA 8 below 21, price below SMA 50'
+    return 'SMAs mixed — no clear crossover signal'
+  })()
 
-    // ── Compute all values ────────────────────────────────────────────
-    const ema8  = calcEMA(closes, 8)
-    const ema21 = calcEMA(closes, 21)
-    const ema50 = calcEMA(closes, 50)
-    const rsi   = calcRSI(closes, 14)
-    const atr   = calcATR(highs, lows, closes, 14)
-    const sr    = calcSR(highs, lows, 5)
-    const pattern = detectPattern(candles)
+  // ── Trend Filter (SMA 50) ─────────────────────────────────────────────
+  const trendFilter = latestClose > latestSMA50
+    ? 'BULLISH — price above SMA 50, only BUY signals valid'
+    : 'BEARISH — price below SMA 50, only SELL signals valid'
 
-    // Get latest values
-    const latestClose  = closes[n - 1]
-    const latestEMA8   = ema8[n - 1]
-    const latestEMA21  = ema21[n - 1]
-    const latestEMA50  = ema50[n - 1]
-    const latestRSI    = rsi[n - 1]
-    const latestATR    = atr[n - 1]
-    const prevEMA8     = ema8[n - 2]
-    const prevEMA21    = ema21[n - 2]
+  // ── RSI Status ────────────────────────────────────────────────────────
+  const rsiStatus = (() => {
+    if (latestRSI >= 70) return `Overbought at ${latestRSI.toFixed(1)} — avoid new BUY entries`
+    if (latestRSI <= 30) return `Oversold at ${latestRSI.toFixed(1)} — avoid new SELL entries`
+    if (latestRSI > 55)  return `Bullish momentum at ${latestRSI.toFixed(1)}`
+    if (latestRSI < 45)  return `Bearish momentum at ${latestRSI.toFixed(1)}`
+    return `Neutral RSI at ${latestRSI.toFixed(1)}`
+  })()
 
-    // EMA crossover detection
-    const emaCrossover = (() => {
-      if (prevEMA8 <= prevEMA21 && latestEMA8 > latestEMA21)
-        return 'Bullish EMA 8/21 Golden Cross — just crossed up'
-      if (prevEMA8 >= prevEMA21 && latestEMA8 < latestEMA21)
-        return 'Bearish EMA 8/21 Death Cross — just crossed down'
-      if (latestEMA8 > latestEMA21 && latestEMA21 > latestEMA50)
-        return 'Bullish alignment EMA 8 > 21 > 50 — strong uptrend'
-      if (latestEMA8 < latestEMA21 && latestEMA21 < latestEMA50)
-        return 'Bearish alignment EMA 8 < 21 < 50 — strong downtrend'
-      return 'EMAs mixed — no clear crossover signal'
-    })()
+  // ── SL/TP Levels (ATR-based) ──────────────────────────────────────────
+  const atrVal  = latestATR
+  const buySL   = (latestClose - atrVal * 2).toFixed(dp)
+  const buyTP1  = (latestClose + atrVal * 1).toFixed(dp)
+  const buyTP2  = (latestClose + atrVal * 2).toFixed(dp)
+  const buyTP3  = (latestClose + atrVal * 3).toFixed(dp)
+  const sellSL  = (latestClose + atrVal * 2).toFixed(dp)
+  const sellTP1 = (latestClose - atrVal * 1).toFixed(dp)
+  const sellTP2 = (latestClose - atrVal * 2).toFixed(dp)
+  const sellTP3 = (latestClose - atrVal * 3).toFixed(dp)
 
-    // RSI status
-    const rsiStatus = (() => {
-      if (latestRSI >= 70) return `Overbought at ${latestRSI.toFixed(1)} — potential reversal or continuation`
-      if (latestRSI <= 30) return `Oversold at ${latestRSI.toFixed(1)} — potential reversal or continuation`
-      if (latestRSI > 50)  return `Bullish momentum at ${latestRSI.toFixed(1)}`
-      return `Bearish momentum at ${latestRSI.toFixed(1)}`
-    })()
+  // ── ML Score (confluence-based) ───────────────────────────────────────
+  const isBullishTrend = latestClose > latestSMA50
+  let mlScore = 0
+  if (latestSMA8 > latestSMA21) mlScore += isBullishTrend ? 25 : 5
+  else mlScore += isBullishTrend ? 5 : 25
+  if (latestSMA21 > latestSMA50 && isBullishTrend) mlScore += 20
+  else if (latestSMA21 < latestSMA50 && !isBullishTrend) mlScore += 20
+  if (isBullishTrend && latestRSI > 50 && latestRSI < 70) mlScore += 20
+  else if (!isBullishTrend && latestRSI < 50 && latestRSI > 30) mlScore += 20
+  if (pattern !== 'No clear pattern' && pattern !== 'None detected') mlScore += 15
+  if (sr.supports.length > 0 || sr.resistances.length > 0) mlScore += 20
 
-    // SL/TP calculation
-    const atrVal   = latestATR
-    const buySL    = (latestClose - atrVal * 2).toFixed(5)
-    const buyTP1   = (latestClose + atrVal * 1).toFixed(5)
-    const buyTP2   = (latestClose + atrVal * 2).toFixed(5)
-    const buyTP3   = (latestClose + atrVal * 3).toFixed(5)
-    const sellSL   = (latestClose + atrVal * 2).toFixed(5)
-    const sellTP1  = (latestClose - atrVal * 1).toFixed(5)
-    const sellTP2  = (latestClose - atrVal * 2).toFixed(5)
-    const sellTP3  = (latestClose - atrVal * 3).toFixed(5)
-
-    // ── Step 3: Build data summary for AI ────────────────────────────
-    const dataSummary = `
+  // ── Build data summary for AI ─────────────────────────────────────────
+  const dataSummary = `
 REAL MARKET DATA FOR ${symbol} on ${interval} timeframe:
 
-PRICE DATA (latest 5 candles):
+LATEST 5 CANDLES:
 ${candles.slice(-5).map(c => `  ${c.time} | O:${c.open} H:${c.high} L:${c.low} C:${c.close}`).join('\n')}
 
-CALCULATED INDICATORS (real values, not estimates):
+REAL CALCULATED INDICATORS (SMA-based strategy):
 - Current Price: ${latestClose}
-- EMA 8:  ${latestEMA8?.toFixed(5)}
-- EMA 21: ${latestEMA21?.toFixed(5)}
-- EMA 50: ${latestEMA50?.toFixed(5)}
-- RSI 14: ${latestRSI?.toFixed(2)}
-- ATR 14: ${latestATR?.toFixed(5)}
-- EMA Crossover Status: ${emaCrossover}
-- RSI Status: ${rsiStatus}
-- Candlestick Pattern: ${pattern}
-- Support Levels:    ${sr.supports.map(s => s.toFixed(5)).join(', ') || 'None found'}
-- Resistance Levels: ${sr.resistances.map(r => r.toFixed(5)).join(', ') || 'None found'}
+- SMA 8:   ${latestSMA8?.toFixed(dp)}
+- SMA 21:  ${latestSMA21?.toFixed(dp)}
+- SMA 50:  ${latestSMA50?.toFixed(dp)}
+- RSI 14:  ${latestRSI?.toFixed(2)}
+- ATR 14:  ${latestATR?.toFixed(dp)}
+- SMA Crossover: ${smaCrossover}
+- Trend Filter:  ${trendFilter}
+- RSI Status:    ${rsiStatus}
+- Candle Pattern: ${pattern}
+- Support Levels:    ${sr.supports.map(s => s.toFixed(dp)).join(', ') || 'None found'}
+- Resistance Levels: ${sr.resistances.map(r => r.toFixed(dp)).join(', ') || 'None found'}
+- ML Confluence Score: ${mlScore}/100
 
-PRE-CALCULATED SL/TP LEVELS (ATR x1/2/3):
-BUY scenario:  Entry ${latestClose} | SL ${buySL} | TP1 ${buyTP1} | TP2 ${buyTP2} | TP3 ${buyTP3}
-SELL scenario: Entry ${latestClose} | SL ${sellSL} | TP1 ${sellTP1} | TP2 ${sellTP2} | TP3 ${sellTP3}
+STRATEGY RULES:
+- BUY only when: price > SMA 50 AND SMA 8 > SMA 21 AND RSI between 50-70
+- SELL only when: price < SMA 50 AND SMA 8 < SMA 21 AND RSI between 30-50
+- NO SIGNAL if RSI is overbought above 70 for BUY or oversold below 30 for SELL
+
+PRE-CALCULATED SL/TP (ATR x1, x2, x3):
+BUY:  Entry ${latestClose} | SL ${buySL} | TP1 ${buyTP1} | TP2 ${buyTP2} | TP3 ${buyTP3}
+SELL: Entry ${latestClose} | SL ${sellSL} | TP1 ${sellTP1} | TP2 ${sellTP2} | TP3 ${sellTP3}
 `
 
-    // ── Step 4: Send to AI for interpretation ─────────────────────────
-    const prompt = `You are NAVIGATOR AI — an expert trading analyst. You have been given REAL calculated market data below. Use ONLY these real numbers to make your analysis. Do NOT estimate or guess any values.
+  const prompt = `You are NAVIGATOR AI — a professional trading analyst. Use ONLY the real calculated data below. Do NOT estimate any values.
 
 ${dataSummary}
 
-Based on the real data above, provide a complete trading analysis and signal.
-
-Rules:
-- Use the exact indicator values provided above
-- Determine BUY, SELL, or NO SIGNAL based on confluence of EMA alignment, RSI, candlestick pattern, and S/R levels
-- Use the pre-calculated SL/TP levels provided
-- ML Score 0-100: based on how many indicators agree (each indicator worth ~20 points)
-- Be specific and reference the actual numbers
+Based on the real SMA crossover strategy data above, determine BUY, SELL, or NO SIGNAL. Apply the strategy rules strictly. Use the exact pre-calculated SL/TP values.
 
 Respond with ONLY a raw JSON object. No markdown. No text before or after. Start with { and end with }.
 
@@ -259,108 +273,103 @@ Respond with ONLY a raw JSON object. No markdown. No text before or after. Start
   "timeframe": "${interval}",
   "currentPrice": "${latestClose}",
   "direction": "BUY or SELL or NO SIGNAL",
-  "setupName": "name the exact setup detected using the real data",
-  "mlScore": 75,
+  "setupName": "describe the exact SMA setup detected e.g. SMA 8/21 Golden Cross above SMA 50 with Bullish Engulfing",
+  "mlScore": ${mlScore},
   "trendDirection": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
   "trendStrength": "STRONG or MODERATE or WEAK",
-  "emaCrossover": "use the real EMA crossover status from the data",
-  "rsiReading": "use the real RSI value from the data",
-  "candlePattern": "use the detected pattern from the data",
-  "srLevels": "describe the real support and resistance levels from the data",
+  "smaCrossover": "${smaCrossover}",
+  "trendFilter": "${trendFilter}",
+  "rsiReading": "${rsiStatus}",
+  "candlePattern": "${pattern}",
+  "srLevels": "describe the real support and resistance levels",
   "entryPrice": "${latestClose}",
-  "stopLoss": "use the pre-calculated SL matching your direction",
-  "takeProfit1": "use the pre-calculated TP1 matching your direction",
-  "takeProfit2": "use the pre-calculated TP2 matching your direction",
-  "takeProfit3": "use the pre-calculated TP3 matching your direction",
+  "stopLoss": "use the pre-calculated SL for your direction",
+  "takeProfit1": "use the pre-calculated TP1 for your direction",
+  "takeProfit2": "use the pre-calculated TP2 for your direction",
+  "takeProfit3": "use the pre-calculated TP3 for your direction",
   "riskReward": "1:3",
   "sentiment": "Strongly Bullish or Bullish or Neutral or Bearish or Strongly Bearish",
   "sentimentScore": 65,
   "priceAction": "2-3 sentences using the real candle data and pattern detected",
-  "supportResistance": "2-3 sentences using the real S/R levels calculated",
-  "technicalIndicators": "2-3 sentences using the exact EMA RSI ATR values provided",
-  "marketSentiment": "2-3 sentences on overall confluence and trade confidence",
-  "summary": "3-4 sentences with exact entry SL TP1 TP2 TP3 values and ML score reasoning",
+  "supportResistance": "2-3 sentences using the real S/R levels",
+  "technicalIndicators": "2-3 sentences using the exact SMA RSI ATR values — mention all three SMA levels",
+  "marketSentiment": "2-3 sentences on SMA confluence RSI filter and overall trade confidence",
+  "summary": "3-4 sentences with exact entry SL TP1 TP2 TP3 and why the signal is valid or invalid based on the strategy rules",
   "tags": ["tag1", "tag2", "tag3"]
 }`
 
-    const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
-        'X-Title': 'Navigator AI'
-      },
-      body: JSON.stringify({
-        model: 'anthropic/claude-3-haiku',
-        messages: [{ role: 'user', content: prompt }]
-      })
+  // ── Call AI ───────────────────────────────────────────────────────────
+  const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+      'X-Title': 'Navigator AI'
+    },
+    body: JSON.stringify({
+      model: 'anthropic/claude-3-haiku',
+      messages: [{ role: 'user', content: prompt }]
     })
+  })
 
-    const aiData = await aiRes.json()
-    if (!aiRes.ok) {
-      return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
-    }
-
-    let text = aiData.choices?.[0]?.message?.content || ''
-    text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
-
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return res.status(500).json({ error: `AI returned unexpected content: "${text.slice(0, 200)}"` })
-    }
-
-    let jsonStr = jsonMatch[0]
-    jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1')
-    jsonStr = jsonStr.replace(/:\s*"([^"]*)"(?=\s*[,}])/g, (match, val) => {
-      return `: "${val.replace(/"/g, "'")}"`
-    })
-
-    let result
-    try {
-      result = JSON.parse(jsonStr)
-    } catch (e) {
-      // Fallback: build result from real data directly
-      const isBull = latestEMA8 > latestEMA21 && latestRSI > 50
-      result = {
-        pair: symbol,
-        timeframe: interval,
-        currentPrice: String(latestClose),
-        direction: isBull ? 'BUY' : 'SELL',
-        setupName: emaCrossover,
-        mlScore: Math.round((
-          (latestEMA8 > latestEMA21 ? 20 : 0) +
-          (latestEMA21 > latestEMA50 ? 20 : 0) +
-          (latestRSI > 50 && latestRSI < 70 ? 20 : 0) +
-          (pattern !== 'No clear pattern' ? 20 : 0) +
-          (sr.supports.length > 0 ? 20 : 0)
-        )),
-        trendDirection: isBull ? 'Bullish' : 'Bearish',
-        trendStrength: 'MODERATE',
-        emaCrossover,
-        rsiReading: rsiStatus,
-        candlePattern: pattern,
-        srLevels: `Support: ${sr.supports.map(s=>s.toFixed(5)).join(', ')} | Resistance: ${sr.resistances.map(r=>r.toFixed(5)).join(', ')}`,
-        entryPrice: String(latestClose),
-        stopLoss: isBull ? buySL : sellSL,
-        takeProfit1: isBull ? buyTP1 : sellTP1,
-        takeProfit2: isBull ? buyTP2 : sellTP2,
-        takeProfit3: isBull ? buyTP3 : sellTP3,
-        riskReward: '1:3',
-        sentiment: isBull ? 'Bullish' : 'Bearish',
-        sentimentScore: isBull ? 65 : 35,
-        priceAction: `Price at ${latestClose}. ${pattern} detected on latest candle.`,
-        supportResistance: `Support: ${sr.supports.map(s=>s.toFixed(5)).join(', ')}. Resistance: ${sr.resistances.map(r=>r.toFixed(5)).join(', ')}.`,
-        technicalIndicators: `EMA8: ${latestEMA8?.toFixed(5)}, EMA21: ${latestEMA21?.toFixed(5)}, RSI: ${latestRSI?.toFixed(2)}, ATR: ${latestATR?.toFixed(5)}.`,
-        marketSentiment: `${emaCrossover}. ${rsiStatus}.`,
-        summary: `${isBull ? 'BUY' : 'SELL'} signal on ${symbol} ${interval}. Entry: ${latestClose}. SL: ${isBull ? buySL : sellSL}. TP1: ${isBull ? buyTP1 : sellTP1}. TP2: ${isBull ? buyTP2 : sellTP2}. TP3: ${isBull ? buyTP3 : sellTP3}.`,
-        tags: [isBull ? 'Bullish' : 'Bearish', pattern, 'Real Data']
-      }
-    }
-
-    return res.status(200).json({ result })
-
-  } catch (err) {
-    return res.status(500).json({ error: err.message || 'Internal server error' })
+  const aiData = await aiRes.json()
+  if (!aiRes.ok) {
+    return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
   }
+
+  let text = aiData.choices?.[0]?.message?.content || ''
+  text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    return res.status(500).json({ error: `AI returned unexpected content: "${text.slice(0, 200)}"` })
+  }
+
+  let jsonStr = jsonMatch[0]
+  jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1')
+  jsonStr = jsonStr.replace(/:\s*"([^"]*)"(?=\s*[,}])/g, (match, val) => {
+    return `: "${val.replace(/"/g, "'")}"`
+  })
+
+  let result
+  try {
+    result = JSON.parse(jsonStr)
+  } catch (e) {
+    // Fallback: build result from real data directly
+    const isBull = latestSMA8 > latestSMA21 && latestClose > latestSMA50 && latestRSI > 50 && latestRSI < 70
+    const isSell = latestSMA8 < latestSMA21 && latestClose < latestSMA50 && latestRSI < 50 && latestRSI > 30
+    const direction = isBull ? 'BUY' : isSell ? 'SELL' : 'NO SIGNAL'
+    result = {
+      pair: symbol,
+      timeframe: interval,
+      currentPrice: String(latestClose),
+      direction,
+      setupName: smaCrossover,
+      mlScore,
+      trendDirection: isBull ? 'Bullish' : isSell ? 'Bearish' : 'Neutral',
+      trendStrength: mlScore >= 70 ? 'STRONG' : mlScore >= 50 ? 'MODERATE' : 'WEAK',
+      smaCrossover,
+      trendFilter,
+      rsiReading: rsiStatus,
+      candlePattern: pattern,
+      srLevels: `Support: ${sr.supports.map(s=>s.toFixed(dp)).join(', ')} | Resistance: ${sr.resistances.map(r=>r.toFixed(dp)).join(', ')}`,
+      entryPrice: String(latestClose),
+      stopLoss:    direction === 'BUY' ? buySL : sellSL,
+      takeProfit1: direction === 'BUY' ? buyTP1 : sellTP1,
+      takeProfit2: direction === 'BUY' ? buyTP2 : sellTP2,
+      takeProfit3: direction === 'BUY' ? buyTP3 : sellTP3,
+      riskReward: '1:3',
+      sentiment: isBull ? 'Bullish' : isSell ? 'Bearish' : 'Neutral',
+      sentimentScore: isBull ? 65 : isSell ? 35 : 50,
+      priceAction: `Price at ${latestClose}. ${pattern} on latest candle. ${trendFilter}.`,
+      supportResistance: `Support: ${sr.supports.map(s=>s.toFixed(dp)).join(', ')}. Resistance: ${sr.resistances.map(r=>r.toFixed(dp)).join(', ')}.`,
+      technicalIndicators: `SMA8: ${latestSMA8?.toFixed(dp)}, SMA21: ${latestSMA21?.toFixed(dp)}, SMA50: ${latestSMA50?.toFixed(dp)}, RSI: ${latestRSI?.toFixed(2)}, ATR: ${latestATR?.toFixed(dp)}.`,
+      marketSentiment: `${smaCrossover}. ${rsiStatus}. ML Score: ${mlScore}/100.`,
+      summary: `${direction} signal on ${symbol} ${interval}. Entry: ${latestClose}. SL: ${direction === 'BUY' ? buySL : sellSL}. TP1: ${direction === 'BUY' ? buyTP1 : sellTP1}. TP2: ${direction === 'BUY' ? buyTP2 : sellTP2}. TP3: ${direction === 'BUY' ? buyTP3 : sellTP3}.`,
+      tags: [direction === 'BUY' ? 'Bullish' : direction === 'SELL' ? 'Bearish' : 'No Signal', pattern, 'SMA Strategy']
+    }
+  }
+
+  return res.status(200).json({ result })
 }
