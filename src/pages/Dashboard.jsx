@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../supabase'
+import { useAlerts } from '../useAlerts'
 import styles from './Dashboard.module.css'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
@@ -10,16 +11,39 @@ const POPULAR = [
 ]
 
 export default function Dashboard({ session }) {
-  const [symbol,   setSymbol]   = useState('')
-  const [interval, setInterval] = useState('15min')
-  const [loading,  setLoading]  = useState(false)
-  const [result,   setResult]   = useState(null)
-  const [error,    setError]    = useState('')
+  const [symbol,       setSymbol]       = useState('')
+  const [interval,     setInterval]     = useState('15min')
+  const [loading,      setLoading]      = useState(false)
+  const [result,       setResult]       = useState(null)
+  const [error,        setError]        = useState('')
+  const [showSettings, setShowSettings] = useState(false)
+  const [installPrompt,setInstallPrompt]= useState(null)
+
+  const {
+    alertsEnabled, permission, watchlist, minMlScore,
+    scanning, lastScan, toggleAlerts, addToWatchlist,
+    removeFromWatchlist, scanWatchlist, alertOnSignal, setMinMlScore
+  } = useAlerts()
 
   const userName =
     session?.user?.user_metadata?.full_name ||
     session?.user?.email?.split('@')[0] ||
     'Trader'
+
+  // Capture install prompt for PWA
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    })
+  }
+
+  async function handleInstall() {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') setInstallPrompt(null)
+  }
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -39,12 +63,16 @@ export default function Dashboard({ session }) {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'API request failed')
       setResult(data.result)
+      // Auto-alert if signal found and alerts enabled
+      if (data.result) alertOnSignal(data.result)
     } catch (err) {
       setError('Analysis failed: ' + (err.message || 'Unknown error.'))
     } finally {
       setLoading(false)
     }
   }
+
+  const isInWatchlist = watchlist.some(w => w.symbol === symbol.trim().toUpperCase())
 
   function getSentimentColor(score) {
     if (score >= 65) return 'var(--green)'
@@ -86,6 +114,23 @@ export default function Dashboard({ session }) {
           <span className={styles.logoAi}>AI</span>
         </div>
         <div className={styles.headerRight}>
+          {/* Install PWA button */}
+          {installPrompt && (
+            <button className={styles.installBtn} onClick={handleInstall}>
+              📲 Install App
+            </button>
+          )}
+          {/* Alert toggle */}
+          <button
+            className={`${styles.alertBtn} ${alertsEnabled ? styles.alertBtnOn : ''}`}
+            onClick={() => setShowSettings(!showSettings)}
+            title="Alert Settings"
+          >
+            {alertsEnabled ? '🔔' : '🔕'}
+            <span style={{ fontSize: '0.7rem', marginLeft: 4 }}>
+              {alertsEnabled ? 'ON' : 'OFF'}
+            </span>
+          </button>
           <div className={styles.userChip}>
             <div className={styles.userAvatar}>{userName.charAt(0).toUpperCase()}</div>
             <span className={styles.userName}>{userName}</span>
@@ -93,6 +138,104 @@ export default function Dashboard({ session }) {
           <button className={styles.signOutBtn} onClick={handleSignOut}>Sign Out</button>
         </div>
       </header>
+
+      {/* ── Alert Settings Panel ── */}
+      {showSettings && (
+        <div className={styles.settingsPanel}>
+          <div className={styles.settingsHeader}>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '1rem' }}>
+              🔔 Alert Settings
+            </div>
+            <button className={styles.closeBtn} onClick={() => setShowSettings(false)}>✕</button>
+          </div>
+
+          {/* Enable toggle */}
+          <div className={styles.settingRow}>
+            <div>
+              <div className={styles.settingLabel}>Push Notifications</div>
+              <div className={styles.settingDesc}>
+                {permission === 'granted' ? '✓ Permission granted' :
+                 permission === 'denied'  ? '✗ Permission denied — check browser settings' :
+                 'Click enable to request permission'}
+              </div>
+            </div>
+            <button
+              className={`${styles.toggleBtn} ${alertsEnabled ? styles.toggleBtnOn : ''}`}
+              onClick={toggleAlerts}
+            >
+              {alertsEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          {/* Min ML Score */}
+          <div className={styles.settingRow}>
+            <div>
+              <div className={styles.settingLabel}>Minimum ML Score</div>
+              <div className={styles.settingDesc}>Only alert when ML score is above this</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="range" min="40" max="90" value={minMlScore}
+                onChange={e => setMinMlScore(Number(e.target.value))}
+                style={{ width: 80 }}
+              />
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.8rem', color: 'var(--cyan)', minWidth: 30 }}>
+                {minMlScore}
+              </span>
+            </div>
+          </div>
+
+          {/* Scan now button */}
+          <div className={styles.settingRow}>
+            <div>
+              <div className={styles.settingLabel}>Manual Scan</div>
+              <div className={styles.settingDesc}>
+                {lastScan ? `Last scan: ${lastScan.toLocaleTimeString()}` : 'Not scanned yet'}
+              </div>
+            </div>
+            <button
+              className={styles.scanBtn}
+              onClick={scanWatchlist}
+              disabled={scanning || watchlist.length === 0}
+            >
+              {scanning ? '⏳ Scanning...' : '▶ Scan Now'}
+            </button>
+          </div>
+
+          {/* Watchlist */}
+          <div style={{ marginTop: 16 }}>
+            <div className={styles.settingLabel} style={{ marginBottom: 10 }}>
+              Watchlist ({watchlist.length} pairs)
+            </div>
+            {watchlist.length === 0 ? (
+              <div style={{ color: 'var(--muted)', fontSize: '0.82rem', fontFamily: "'DM Mono', monospace" }}>
+                No pairs added. Scan a symbol and click + Watch to add it.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {watchlist.map(w => (
+                  <div key={w.symbol} className={styles.watchItem}>
+                    <span>{w.symbol}</span>
+                    <span style={{ opacity: 0.6, fontSize: '0.65rem' }}>{w.interval}</span>
+                    <button
+                      className={styles.watchRemove}
+                      onClick={() => removeFromWatchlist(w.symbol)}
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* iOS install instructions */}
+          <div className={styles.iosInstall}>
+            <div className={styles.settingLabel}>📱 Install on iPhone/iPad</div>
+            <div className={styles.settingDesc}>
+              Open in Safari → tap the Share button → tap "Add to Home Screen"
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Hero ── */}
       <div className={styles.hero}>
@@ -134,9 +277,7 @@ export default function Dashboard({ session }) {
             value={interval}
             onChange={e => setInterval(e.target.value)}
           >
-            {INTERVALS.map(i => (
-              <option key={i} value={i}>{i}</option>
-            ))}
+            {INTERVALS.map(i => <option key={i} value={i}>{i}</option>)}
           </select>
           <button
             className={styles.analyzeBtn}
@@ -146,6 +287,26 @@ export default function Dashboard({ session }) {
             {loading ? 'Scanning...' : '🧭 Scan'}
           </button>
         </div>
+
+        {/* Watch button — only show when symbol is typed */}
+        {symbol.trim() && (
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              className={`${styles.watchBtn} ${isInWatchlist ? styles.watchBtnActive : ''}`}
+              onClick={() => isInWatchlist
+                ? removeFromWatchlist(symbol.trim().toUpperCase())
+                : addToWatchlist(symbol.trim(), interval)
+              }
+            >
+              {isInWatchlist ? '✓ Watching' : '+ Watch & Alert'}
+            </button>
+            {isInWatchlist && (
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.72rem', color: 'var(--green)' }}>
+                Will alert when signal detected
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Error ── */}
@@ -163,7 +324,6 @@ export default function Dashboard({ session }) {
       {result && (
         <div className={styles.results}>
 
-          {/* Header row */}
           <div className={styles.resultsHeader}>
             <div className={styles.resultsTitle}>Analysis Complete</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -198,12 +358,11 @@ export default function Dashboard({ session }) {
                 }} />
               </div>
             </div>
-            {/* SMA values row */}
             <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
               {[
-                { label: 'TREND', val: result.trendDirection },
+                { label: 'TREND',    val: result.trendDirection },
                 { label: 'STRENGTH', val: result.trendStrength },
-                { label: 'PATTERN', val: result.candlePattern },
+                { label: 'PATTERN',  val: result.candlePattern },
               ].map(({ label, val }) => (
                 <div key={label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '6px 12px', border: '1px solid var(--border)' }}>
                   <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.62rem', color: 'var(--muted)', marginBottom: 2 }}>{label}</div>
@@ -218,15 +377,10 @@ export default function Dashboard({ session }) {
             <div style={{
               background: isBuy ? 'rgba(0,245,160,0.08)' : isSell ? 'rgba(255,77,166,0.08)' : 'rgba(255,190,11,0.08)',
               border: `1px solid ${isBuy ? 'rgba(0,245,160,0.25)' : isSell ? 'rgba(255,77,166,0.25)' : 'rgba(255,190,11,0.25)'}`,
-              borderRadius: 12,
-              padding: '12px 18px',
-              marginBottom: 16,
-              fontFamily: "'DM Mono', monospace",
-              fontSize: '0.78rem',
+              borderRadius: 12, padding: '12px 18px', marginBottom: 16,
+              fontFamily: "'DM Mono', monospace", fontSize: '0.78rem',
               color: isBuy ? 'var(--green)' : isSell ? 'var(--pink)' : 'var(--amber)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8
+              display: 'flex', alignItems: 'center', gap: 8
             }}>
               <span>{isBuy ? '▲' : isSell ? '▼' : '◆'}</span>
               <span>SMA 50 TREND FILTER: {result.trendFilter}</span>
