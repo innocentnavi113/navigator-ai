@@ -39,6 +39,7 @@
   font-size: 0.65rem;
   background: linear-gradient(90deg, var(--violet), var(--pink));
   -webkit-background-clip: text;
+  background-clip: text;          /* ← add this line */
   -webkit-text-fill-color: transparent;
   font-weight: 700;
   margin-left: 2px;
@@ -153,9 +154,11 @@
 }
 
 .grad {
-  background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 50%, var(--pink) 100%);
+  background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 50%);
   -webkit-background-clip: text;
+  background-clip: text;          /* ← add this line */
   -webkit-text-fill-color: transparent;
+  color: transparent;             /* ← add this as fallback too */
 }
 
 .heroSub {
