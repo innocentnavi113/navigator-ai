@@ -216,25 +216,45 @@ Respond with ONLY a raw JSON object. No markdown. No text before or after. Start
   "tags": ["tag1", "tag2", "tag3"]
 }`
 
-    // ── Call AI ───────────────────────────────────────────────────────
-    const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
-        'X-Title': 'Navigator AI'
-      },
-      body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
-        max_tokens: 800,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    })
+    // ── Call AI with fallback models ──────────────────────────────────
+    const models = [
+      'google/gemma-3-27b-it:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'deepseek/deepseek-chat:free'
+    ]
 
-    const aiData = await aiRes.json()
-    if (!aiRes.ok) {
-      return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
+    let aiData = null
+    let lastError = null
+
+    for (const model of models) {
+      try {
+        const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+            'X-Title': 'Navigator AI'
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 800,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        })
+        const data = await aiRes.json()
+        if (aiRes.ok && data.choices?.[0]?.message?.content) {
+          aiData = data
+          break
+        }
+        lastError = data.error?.message || `Model ${model} failed`
+      } catch (e) {
+        lastError = e.message
+      }
+    }
+
+    if (!aiData) {
+      return res.status(500).json({ error: `All AI models failed. Last error: ${lastError}` })
     }
 
     let text = aiData.choices?.[0]?.message?.content || ''
