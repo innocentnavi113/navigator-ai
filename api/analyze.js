@@ -226,7 +226,7 @@ Respond with ONLY a raw JSON object. No markdown. No text before or after. Start
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-chat-v3-0324:free',
+        model: 'deepseek/deepseek-chat:free',
         max_tokens: 800,
         messages: [{ role: 'user', content: prompt }]
       })
