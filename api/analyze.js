@@ -138,7 +138,7 @@ Reply with ONLY this JSON. Keep ALL values SHORT (max 80 chars per string). No m
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-chat-v3-0324:free',
+        model: 'openrouter/auto',
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }]
       })
