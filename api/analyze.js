@@ -77,7 +77,7 @@ export default async function handler(req, res) {
     let mlScore = 0
     if (htfBullish || htfBearish) mlScore += 40
     mlScore += Math.round(pullbackScore * 0.3)
-    if ((htfBullish && rsiBuyZone)  || (htfBearish && rsiSellZone))    mlScore += 15
+    if ((htfBullish && rsiBuyZone)  || (htfBearish && rsiSellZone))     mlScore += 15
     if ((htfBullish && rsiExtremeBuy) || (htfBearish && rsiExtremeSell)) mlScore += 10
     if (ltf.pattern !== 'No clear pattern' && ltf.pattern !== 'None detected') mlScore += 15
     mlScore = Math.min(100, mlScore)
@@ -105,10 +105,6 @@ export default async function handler(req, res) {
     const tp2 = direction === 'BUY' ? buyTP2 : sellTP2
     const tp3 = direction === 'BUY' ? buyTP3 : sellTP3
 
-    const isBull = direction === 'BUY'
-    const isSell = direction === 'SELL'
-
-    // Build short data summary
     const summary = `
 SYMBOL: ${cleanSymbol} | LTF: ${interval} | HTF: ${htfInterval}
 HTF: Close=${htf.latestClose} SMA20=${htf.sma20?.toFixed(dp)} SMA50=${htf.sma50?.toFixed(dp)} TREND=${htfTrend}
@@ -117,17 +113,16 @@ PATTERN: ${ltf.pattern}
 SUPPORT: ${ltf.sr.supports.map(s=>s.toFixed(dp)).join(',')||'none'}
 RESISTANCE: ${ltf.sr.resistances.map(r=>r.toFixed(dp)).join(',')||'none'}
 SIGNAL: ${direction} | ML=${mlScore} | PULLBACK=${pullbackScore}
-${isBull?`BUY: Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
-${isSell?`SELL: Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
+${direction==='BUY' ?`BUY:  Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
+${direction==='SELL'?`SELL: Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
 `
 
-    // Short prompt — forces compact JSON response
     const prompt = `You are NAVIGATOR AI trading analyst. Use ONLY this real data:
 ${summary}
 
-Reply with ONLY this JSON. Keep ALL values SHORT (max 80 chars per string). No markdown.
+Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markdown.
 
-{"pair":"${cleanSymbol}","timeframe":"${interval}","htfTimeframe":"${htfInterval}","currentPrice":"${price}","direction":"${direction}","setupName":"brief setup name","mlScore":${mlScore},"pullbackScore":${pullbackScore},"htfTrend":"${htfTrend}","htfAnalysis":"1 short sentence on HTF trend","trendDirection":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","trendStrength":"${mlScore>=70?'STRONG':mlScore>=50?'MODERATE':'WEAK'}","meanReversionZone":"brief description","rsiReading":"RSI ${ltf.rsi?.toFixed(1)} - brief status","candlePattern":"${ltf.pattern}","entryPrice":"${price}","stopLoss":"${sl}","takeProfit1":"${tp1}","takeProfit2":"${tp2}","takeProfit3":"${tp3}","riskReward":"1:3.3","sentiment":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","sentimentScore":${mlScore},"priceAction":"1-2 sentences on candle and pullback","supportResistance":"1-2 sentences on S/R levels","technicalIndicators":"1-2 sentences on SMA RSI ATR","marketSentiment":"1-2 sentences on MTF confluence","summary":"2-3 sentences on trade setup entry SL TP","tags":["${htfTrend}","${ltf.pattern.split(' ')[0]}","${direction==='NO SIGNAL'?'Waiting':direction}"]}`
+{"pair":"${cleanSymbol}","timeframe":"${interval}","htfTimeframe":"${htfInterval}","currentPrice":"${price}","direction":"${direction}","setupName":"brief setup name","mlScore":${mlScore},"pullbackScore":${pullbackScore},"htfTrend":"${htfTrend}","htfAnalysis":"1 short sentence on HTF trend","trendDirection":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","trendStrength":"${mlScore>=70?'STRONG':mlScore>=50?'MODERATE':'WEAK'}","meanReversionZone":"brief description","rsiReading":"RSI ${ltf.rsi?.toFixed(1)} status","candlePattern":"${ltf.pattern}","entryPrice":"${price}","stopLoss":"${sl}","takeProfit1":"${tp1}","takeProfit2":"${tp2}","takeProfit3":"${tp3}","riskReward":"1:3.3","sentiment":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","sentimentScore":${mlScore},"priceAction":"1-2 sentences on candle and pullback","supportResistance":"1-2 sentences on S/R levels","technicalIndicators":"1-2 sentences on SMA RSI ATR","marketSentiment":"1-2 sentences on MTF confluence","summary":"2-3 sentences on trade setup","tags":["${htfTrend}","${ltf.pattern.split(' ')[0]}","${direction==='NO SIGNAL'?'Waiting':direction}"]}`
 
     const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -139,7 +134,7 @@ Reply with ONLY this JSON. Keep ALL values SHORT (max 80 chars per string). No m
       },
       body: JSON.stringify({
         model: 'openrouter/auto',
-        max_tokens: 1200,
+        max_tokens: 1000,
         messages: [{ role: 'user', content: prompt }]
       })
     })
@@ -177,26 +172,69 @@ Reply with ONLY this JSON. Keep ALL values SHORT (max 80 chars per string). No m
   }
 }
 
-async function fetchCandles(symbol, interval) {
-  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
-  const res  = await fetch(url)
-  const data = await res.json()
-  if (data.status === 'error' || !data.values || !Array.isArray(data.values)) {
-    const fallback = symbol.replace('/', '')
-    const fbRes  = await fetch(`https://api.twelvedata.com/time_series?symbol=${fallback}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`)
-    const fbData = await fbRes.json()
-    if (fbData.status === 'error' || !fbData.values) {
-      return { error: `Could not fetch data for "${symbol}". Try: EURUSD, BTC/USD, XAU/USD, SPY` }
-    }
-    return { candles: parseCandles(fbData.values) }
+// ── Symbol variants to try ──────────────────────────────────────────────
+function getSymbolVariants(symbol) {
+  const s = symbol.trim().toUpperCase()
+  const variants = [s]
+
+  // BTC/USD → BTCUSD, BTC/USDT, BTCUSDT
+  if (s.includes('/')) {
+    const [base, quote] = s.split('/')
+    variants.push(`${base}${quote}`)           // BTCUSD
+    variants.push(`${base}/USDT`)              // BTC/USDT (crypto)
+    variants.push(`${base}USDT`)               // BTCUSDT
+    variants.push(`${base}USD`)                // BTCUSD
   }
-  return { candles: parseCandles(data.values) }
+
+  // Crypto without slash: BTCUSD → BTC/USD
+  if (!s.includes('/') && s.length >= 6) {
+    const base  = s.slice(0, 3)
+    const quote = s.slice(3)
+    variants.push(`${base}/${quote}`)
+  }
+
+  // Index aliases
+  const aliases = {
+    'US30': 'DJI', 'DOW': 'DJI', 'DOWJONES': 'DJI',
+    'NAS100': 'NDX', 'NASDAQ': 'NDX', 'NQ': 'NDX',
+    'SP500': 'SPX', 'S&P500': 'SPX',
+    'DAX': 'DAX', 'FTSE': 'FTSE100',
+    'XAUUSD': 'XAU/USD', 'GOLD': 'XAU/USD',
+    'XAGUSD': 'XAG/USD', 'SILVER': 'XAG/USD',
+    'USOIL': 'WTI', 'OIL': 'WTI',
+  }
+  if (aliases[s]) variants.push(aliases[s])
+
+  return [...new Set(variants)]
+}
+
+async function fetchCandles(symbol, interval) {
+  const variants = getSymbolVariants(symbol)
+
+  for (const sym of variants) {
+    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
+    try {
+      const res  = await fetch(url)
+      const data = await res.json()
+      if (data.status !== 'error' && data.values && Array.isArray(data.values) && data.values.length > 10) {
+        return { candles: parseCandles(data.values), resolvedSymbol: sym }
+      }
+    } catch (e) {}
+  }
+
+  return {
+    error: `Could not find data for "${symbol}". Supported formats: EUR/USD, XAU/USD, BTC/USD, ETH/USD, SPY, AAPL, US30`
+  }
 }
 
 function parseCandles(values) {
   return values.reverse().map(c => ({
-    time: c.datetime, open: parseFloat(c.open), high: parseFloat(c.high),
-    low: parseFloat(c.low), close: parseFloat(c.close), volume: parseFloat(c.volume || 0)
+    time: c.datetime,
+    open:   parseFloat(c.open),
+    high:   parseFloat(c.high),
+    low:    parseFloat(c.low),
+    close:  parseFloat(c.close),
+    volume: parseFloat(c.volume || 0)
   }))
 }
 
@@ -253,7 +291,7 @@ function calcIndicators(candles) {
       for (let j = i - strength; j <= i + strength; j++) {
         if (j === i) continue
         if (highs[j] >= highs[i]) isHigh = false
-        if (lows[j] <= lows[i])   isLow  = false
+        if (lows[j]  <= lows[i])  isLow  = false
       }
       if (isHigh) resistances.push(highs[i])
       if (isLow)  supports.push(lows[i])
