@@ -1,28 +1,37 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { useAlerts } from '../useAlerts'
 import styles from './Dashboard.module.css'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
-
-const POPULAR = [
-  'EUR/USD', 'GBP/USD', 'USD/JPY', 'XAU/USD',
-  'BTC/USD', 'ETH/USD', 'SPY',     'ETH/BTC'
-]
-
+const POPULAR = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY', 'US30']
 const HTF_MAP = {
   '1min': '15min', '5min': '1h', '15min': '4h', '30min': '4h',
   '1h': '1day', '2h': '1day', '4h': '1week', '1day': '1month'
 }
+const SCAN_STEPS = [
+  'Reading price axis',
+  'Mapping market structure',
+  'Detecting S/R & order blocks',
+  'Scanning liquidity & FVGs',
+  'Calculating indicators',
+  'Generating signal',
+]
+const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Learn']
 
 export default function Dashboard({ session }) {
+  const [activeTab,     setActiveTab]     = useState('Scanner')
   const [symbol,        setSymbol]        = useState('')
-  const [interval,      setInterval]      = useState('15min')
+  const [interval,      setInterval]      = useState('1h')
   const [loading,       setLoading]       = useState(false)
   const [result,        setResult]        = useState(null)
   const [error,         setError]         = useState('')
+  const [scanStep,      setScanStep]      = useState(0)
   const [showSettings,  setShowSettings]  = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
+  const [htfResults,    setHtfResults]    = useState([])
+  const [htfLoading,    setHtfLoading]    = useState(false)
+  const scanTimer = useRef(null)
 
   const {
     alertsEnabled, permission, watchlist, minMlScore,
@@ -35,12 +44,13 @@ export default function Dashboard({ session }) {
     session?.user?.email?.split('@')[0] ||
     'Trader'
 
-  if (typeof window !== 'undefined') {
-    window.addEventListener('beforeinstallprompt', e => {
-      e.preventDefault()
-      setInstallPrompt(e)
-    })
-  }
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault(); setInstallPrompt(e)
+      })
+    }
+  }, [])
 
   async function handleInstall() {
     if (!installPrompt) return
@@ -51,16 +61,28 @@ export default function Dashboard({ session }) {
 
   async function handleSignOut() { await supabase.auth.signOut() }
 
-  async function analyzeSymbol() {
-    if (!symbol.trim()) return
+  // Animated scan steps
+  function startScanAnimation() {
+    setScanStep(0)
+    let step = 0
+    scanTimer.current = setInterval(() => {
+      step++
+      setScanStep(step)
+      if (step >= SCAN_STEPS.length) clearInterval(scanTimer.current)
+    }, 600)
+  }
+
+  async function analyzeSymbol(sym = symbol, intv = interval) {
+    if (!sym.trim()) return
     setLoading(true)
     setResult(null)
     setError('')
+    startScanAnimation()
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: symbol.trim().toUpperCase(), interval })
+        body: JSON.stringify({ symbol: sym.trim().toUpperCase(), interval: intv })
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'API request failed')
@@ -69,91 +91,166 @@ export default function Dashboard({ session }) {
     } catch (err) {
       setError('Analysis failed: ' + (err.message || 'Unknown error.'))
     } finally {
+      clearInterval(scanTimer.current)
+      setScanStep(SCAN_STEPS.length)
       setLoading(false)
     }
   }
 
+  // Multi-TF: scan same symbol across all timeframes
+  async function runMultiTF() {
+    if (!symbol.trim()) return
+    setHtfLoading(true)
+    setHtfResults([])
+    const tfs = ['15min', '1h', '4h', '1day']
+    const results = []
+    for (const tf of tfs) {
+      try {
+        const res  = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol: symbol.trim().toUpperCase(), interval: tf })
+        })
+        const data = await res.json()
+        if (data.result) results.push({ tf, ...data.result })
+      } catch (e) {}
+    }
+    setHtfResults(results)
+    setHtfLoading(false)
+  }
+
   const isInWatchlist = watchlist.some(w => w.symbol === symbol.trim().toUpperCase())
   const htfLabel = HTF_MAP[interval] || '1day'
-
-  function getSentimentColor(score) {
-    if (score >= 65) return 'var(--green)'
-    if (score <= 35) return 'var(--pink)'
-    return 'var(--amber)'
-  }
-
-  function getSentimentGradient(score) {
-    if (score >= 65) return 'linear-gradient(90deg, var(--green), var(--cyan))'
-    if (score <= 35) return 'linear-gradient(90deg, var(--pink), var(--violet))'
-    return 'linear-gradient(90deg, var(--amber), #ff9900)'
-  }
-
-  function getMlColor(score) {
-    if (score >= 70) return 'var(--green)'
-    if (score >= 50) return 'var(--amber)'
-    return 'var(--pink)'
-  }
-
-  function getTagClass(tag) {
-    const t = tag.toLowerCase()
-    if (/bull|buy|long|engulf|hammer|support|reversion/.test(t)) return styles.tagBull
-    if (/bear|sell|short|shooting|resist/.test(t)) return styles.tagBear
-    if (/neutral|range|doji|waiting|no signal/.test(t)) return styles.tagNeutral
-    return styles.tagCyan
-  }
-
-  function getTrendColor(trend) {
-    if (!trend) return 'var(--muted)'
-    if (trend === 'BULLISH') return 'var(--green)'
-    if (trend === 'BEARISH') return 'var(--pink)'
-    return 'var(--amber)'
-  }
-
   const isBuy  = result?.direction === 'BUY'
   const isSell = result?.direction === 'SELL'
 
-  return (
-    <div className={styles.wrapper}>
+  function getDirectionColor(dir) {
+    if (dir === 'BUY')  return '#00e676'
+    if (dir === 'SELL') return '#ff4444'
+    return '#888'
+  }
 
-      {/* ── Header ── */}
-      <header className={styles.header}>
-        <div className={styles.logo}>
-          <div className={styles.logoIcon}>🧭</div>
-          <span className={styles.logoNav}>NAVIGATOR</span>
-          <span className={styles.logoAi}>AI</span>
+  function getMlColor(score) {
+    if (score >= 70) return '#00e676'
+    if (score >= 50) return '#ffd600'
+    return '#ff4444'
+  }
+
+  function getTrendColor(trend) {
+    if (!trend) return '#888'
+    if (trend === 'BULLISH' || trend === 'Bullish' || trend?.includes('Bull')) return '#00e676'
+    if (trend === 'BEARISH' || trend === 'Bearish' || trend?.includes('Bear')) return '#ff4444'
+    return '#ffd600'
+  }
+
+  return (
+    <div className={styles.app}>
+
+      {/* ── TOP BAR ── */}
+      <div className={styles.topBar}>
+        <div className={styles.topLeft}>
+          <div className={styles.logoMark}>
+            <div className={styles.logoEye}>◎</div>
+          </div>
+          <div>
+            <div className={styles.appName}>Navigator <span className={styles.appAI}>AI</span></div>
+            <div className={styles.appSub}>INTELLIGENCE ENGINE</div>
+          </div>
         </div>
-        <div className={styles.headerRight}>
-          {installPrompt && (
-            <button className={styles.installBtn} onClick={handleInstall}>📲 Install App</button>
+        <div className={styles.topRight}>
+          <div className={styles.creditsBadge}>
+            <span className={styles.creditsDot} />
+            <span className={styles.creditsText}>Free</span>
+          </div>
+          <button
+            className={`${styles.iconBtn} ${alertsEnabled ? styles.iconBtnActive : ''}`}
+            onClick={() => setShowSettings(!showSettings)}
+            title="Alerts"
+          >🔔</button>
+          <button className={styles.iconBtn} onClick={handleSignOut} title="Sign out">⏻</button>
+        </div>
+      </div>
+
+      {/* ── TABS ── */}
+      <div className={styles.tabBar}>
+        {TABS.map(tab => (
+          <button
+            key={tab}
+            className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`}
+            onClick={() => { setActiveTab(tab); if (tab === 'Multi-TF') runMultiTF() }}
+          >{tab}</button>
+        ))}
+      </div>
+
+      {/* ── SYMBOL INPUT ── */}
+      <div className={styles.inputSection}>
+        <div className={styles.symbolRow}>
+          <div className={styles.symbolInputWrap}>
+            <span className={styles.symbolIcon}>◎</span>
+            <input
+              className={styles.symbolInput}
+              type="text"
+              placeholder="Symbol e.g. XAU/USD, BTC/USD"
+              value={symbol}
+              onChange={e => setSymbol(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && analyzeSymbol()}
+            />
+          </div>
+          <select
+            className={styles.tfSelect}
+            value={interval}
+            onChange={e => setInterval(e.target.value)}
+          >
+            {INTERVALS.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
+        </div>
+
+        {/* Popular pairs */}
+        <div className={styles.pairsRow}>
+          {POPULAR.map(p => (
+            <button
+              key={p}
+              className={`${styles.pairChip} ${symbol === p ? styles.pairChipActive : ''}`}
+              onClick={() => setSymbol(p)}
+            >{p}</button>
+          ))}
+        </div>
+
+        {/* Strategist badge + Scan button */}
+        <div className={styles.actionRow}>
+          <div className={styles.strategistBadge}>
+            <span className={styles.strategistDot} />
+            Strategist
+          </div>
+          {symbol.trim() && (
+            <button
+              className={`${styles.watchChip} ${isInWatchlist ? styles.watchChipActive : ''}`}
+              onClick={() => isInWatchlist ? removeFromWatchlist(symbol.trim().toUpperCase()) : addToWatchlist(symbol.trim(), interval)}
+            >
+              {isInWatchlist ? '✓ Watching' : '+ Watch'}
+            </button>
           )}
           <button
-            className={`${styles.alertBtn} ${alertsEnabled ? styles.alertBtnOn : ''}`}
-            onClick={() => setShowSettings(!showSettings)}
+            className={styles.scanBtn}
+            onClick={() => analyzeSymbol()}
+            disabled={!symbol.trim() || loading}
           >
-            {alertsEnabled ? '🔔' : '🔕'}
-            <span style={{ fontSize: '0.7rem', marginLeft: 4 }}>{alertsEnabled ? 'ON' : 'OFF'}</span>
+            {loading ? 'Scanning...' : 'Scan'}
           </button>
-          <div className={styles.userChip}>
-            <div className={styles.userAvatar}>{userName.charAt(0).toUpperCase()}</div>
-            <span className={styles.userName}>{userName}</span>
-          </div>
-          <button className={styles.signOutBtn} onClick={handleSignOut}>Sign Out</button>
         </div>
-      </header>
+      </div>
 
-      {/* ── Alert Settings Panel ── */}
+      {/* ── ALERT SETTINGS PANEL ── */}
       {showSettings && (
         <div className={styles.settingsPanel}>
-          <div className={styles.settingsHeader}>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '1rem' }}>🔔 Alert Settings</div>
+          <div className={styles.settingsPanelHeader}>
+            <span>🔔 Alert Settings</span>
             <button className={styles.closeBtn} onClick={() => setShowSettings(false)}>✕</button>
           </div>
           <div className={styles.settingRow}>
             <div>
               <div className={styles.settingLabel}>Push Notifications</div>
-              <div className={styles.settingDesc}>
-                {permission === 'granted' ? '✓ Permission granted' : permission === 'denied' ? '✗ Denied — check browser settings' : 'Click enable to request permission'}
-              </div>
+              <div className={styles.settingDesc}>{permission === 'granted' ? '✓ Granted' : 'Click to enable'}</div>
             </div>
             <button className={`${styles.toggleBtn} ${alertsEnabled ? styles.toggleBtnOn : ''}`} onClick={toggleAlerts}>
               {alertsEnabled ? 'ON' : 'OFF'}
@@ -161,336 +258,314 @@ export default function Dashboard({ session }) {
           </div>
           <div className={styles.settingRow}>
             <div>
-              <div className={styles.settingLabel}>Minimum ML Score</div>
-              <div className={styles.settingDesc}>Only alert when ML score is above this</div>
+              <div className={styles.settingLabel}>Min ML Score: {minMlScore}</div>
+              <div className={styles.settingDesc}>Only alert above this score</div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="range" min="40" max="90" value={minMlScore} onChange={e => setMinMlScore(Number(e.target.value))} style={{ width: 80 }} />
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.8rem', color: 'var(--cyan)', minWidth: 30 }}>{minMlScore}</span>
-            </div>
+            <input type="range" min="40" max="90" value={minMlScore} onChange={e => setMinMlScore(Number(e.target.value))} style={{ width: 80 }} />
           </div>
-          <div className={styles.settingRow}>
-            <div>
-              <div className={styles.settingLabel}>Manual Scan</div>
-              <div className={styles.settingDesc}>{lastScan ? `Last scan: ${lastScan.toLocaleTimeString()}` : 'Not scanned yet'}</div>
-            </div>
-            <button className={styles.scanBtn} onClick={scanWatchlist} disabled={scanning || watchlist.length === 0}>
-              {scanning ? '⏳ Scanning...' : '▶ Scan Now'}
-            </button>
-          </div>
-          <div style={{ marginTop: 16 }}>
-            <div className={styles.settingLabel} style={{ marginBottom: 10 }}>Watchlist ({watchlist.length} pairs)</div>
-            {watchlist.length === 0 ? (
-              <div style={{ color: 'var(--muted)', fontSize: '0.82rem', fontFamily: "'DM Mono', monospace" }}>
-                No pairs added. Scan a symbol and click + Watch to add it.
+          {installPrompt && (
+            <button className={styles.installBtn} onClick={handleInstall}>📲 Install App to Home Screen</button>
+          )}
+          <div className={styles.iosHint}>iPhone: Safari → Share → Add to Home Screen</div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          SCANNER TAB
+      ══════════════════════════════════════════ */}
+      {activeTab === 'Scanner' && (
+        <div className={styles.tabContent}>
+
+          {/* Error */}
+          {error && <div className={styles.errorBox}>⚠ {error}</div>}
+
+          {/* ── ANALYZING ANIMATION ── */}
+          {loading && (
+            <div className={styles.analyzingCard}>
+              <div className={styles.analyzingOrb}>
+                <div className={styles.analyzingRing} />
+                <div className={styles.analyzingCore}>◎</div>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {watchlist.map(w => (
-                  <div key={w.symbol} className={styles.watchItem}>
-                    <span>{w.symbol}</span>
-                    <span style={{ opacity: 0.6, fontSize: '0.65rem' }}>{w.interval}</span>
-                    <button className={styles.watchRemove} onClick={() => removeFromWatchlist(w.symbol)}>✕</button>
+              <div className={styles.analyzingTitle}>Analyzing</div>
+              <div className={styles.analyzingSubtitle}>Reading structure, order flow & liquidity...</div>
+              <div className={styles.analyzingBar}>
+                <div className={styles.analyzingBarFill} style={{ width: `${(scanStep / SCAN_STEPS.length) * 100}%` }} />
+              </div>
+              <div className={styles.stepsList}>
+                {SCAN_STEPS.map((step, i) => (
+                  <div key={step} className={`${styles.stepItem} ${i < scanStep ? styles.stepDone : i === scanStep ? styles.stepActive : ''}`}>
+                    <div className={styles.stepCheck}>{i < scanStep ? '✓' : '○'}</div>
+                    <span>{step}</span>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-          <div className={styles.iosInstall}>
-            <div className={styles.settingLabel}>📱 Install on iPhone/iPad</div>
-            <div className={styles.settingDesc}>Open in Safari → tap Share → tap "Add to Home Screen"</div>
-          </div>
+            </div>
+          )}
+
+          {/* ── RESULTS ── */}
+          {result && !loading && (
+            <div className={styles.resultsSection}>
+
+              {/* ── SIGNAL HEADER ── */}
+              <div className={styles.signalHeader}>
+                <div className={styles.signalLeft}>
+                  <div className={styles.signalPair}>{result.pair}</div>
+                  <div className={styles.signalMeta}>
+                    <span className={styles.signalTf}>{result.timeframe}</span>
+                    <span className={styles.signalTf}>{result.htfTimeframe} HTF</span>
+                    {result.currentPrice && <span className={styles.signalPrice}>@ {result.currentPrice}</span>}
+                  </div>
+                </div>
+                <div className={styles.signalRight}>
+                  <div className={styles.mlCircle} style={{ borderColor: getMlColor(result.mlScore ?? 50) }}>
+                    <div className={styles.mlScore} style={{ color: getMlColor(result.mlScore ?? 50) }}>{result.mlScore ?? '—'}</div>
+                    <div className={styles.mlLabel}>ML</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── DIRECTION BANNER ── */}
+              <div className={`${styles.directionBanner} ${isBuy ? styles.directionBuy : isSell ? styles.directionSell : styles.directionNeutral}`}>
+                <div className={styles.directionIcon}>{isBuy ? '▲' : isSell ? '▼' : '◆'}</div>
+                <div>
+                  <div className={styles.directionLabel}>{result.direction === 'NO SIGNAL' ? 'WAIT — NO SIGNAL' : result.direction}</div>
+                  <div className={styles.directionSetup}>{result.setupName}</div>
+                </div>
+                <div className={styles.directionRR}>{result.riskReward}</div>
+              </div>
+
+              {/* ── HTF TREND ── */}
+              <div className={styles.sectionCard}>
+                <div className={styles.sectionCardLabel}>Higher Timeframe Bias ({result.htfTimeframe})</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ color: getTrendColor(result.htfTrend), fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '1.1rem' }}>
+                    {result.htfTrend === 'BULLISH' ? '▲' : result.htfTrend === 'BEARISH' ? '▼' : '◆'} {result.htfTrend}
+                  </div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#888' }}>
+                    STRENGTH: <span style={{ color: '#eee' }}>{result.trendStrength}</span>
+                  </div>
+                </div>
+                <div className={styles.sectionCardText}>{result.htfAnalysis}</div>
+              </div>
+
+              {/* ── LEVELS ── */}
+              <div className={styles.levelsCard}>
+                <div className={styles.sectionCardLabel}>Trade Levels</div>
+
+                {/* Chart-style levels display */}
+                <div className={styles.levelsList}>
+                  <div className={styles.levelItem} style={{ borderColor: '#ff4444' }}>
+                    <div className={styles.levelType} style={{ color: '#ff4444' }}>SL</div>
+                    <div className={styles.levelName}>Stop Loss</div>
+                    <div className={styles.levelPrice} style={{ color: '#ff4444' }}>{result.stopLoss ?? '—'}</div>
+                  </div>
+                  <div className={styles.levelItem} style={{ borderColor: '#00bcd4' }}>
+                    <div className={styles.levelType} style={{ color: '#00bcd4' }}>E</div>
+                    <div className={styles.levelName}>Entry</div>
+                    <div className={styles.levelPrice} style={{ color: '#00bcd4' }}>{result.entryPrice ?? '—'}</div>
+                  </div>
+                  <div className={styles.levelItem} style={{ borderColor: 'rgba(0,230,118,0.5)' }}>
+                    <div className={styles.levelType} style={{ color: 'rgba(0,230,118,0.7)' }}>T1</div>
+                    <div className={styles.levelName}>Target 1</div>
+                    <div className={styles.levelPrice} style={{ color: 'rgba(0,230,118,0.7)' }}>{result.takeProfit1 ?? '—'}</div>
+                  </div>
+                  <div className={styles.levelItem} style={{ borderColor: 'rgba(0,230,118,0.75)' }}>
+                    <div className={styles.levelType} style={{ color: 'rgba(0,230,118,0.85)' }}>T2</div>
+                    <div className={styles.levelName}>Target 2</div>
+                    <div className={styles.levelPrice} style={{ color: 'rgba(0,230,118,0.85)' }}>{result.takeProfit2 ?? '—'}</div>
+                  </div>
+                  <div className={styles.levelItem} style={{ borderColor: '#00e676' }}>
+                    <div className={styles.levelType} style={{ color: '#00e676' }}>T3</div>
+                    <div className={styles.levelName}>Target 3</div>
+                    <div className={styles.levelPrice} style={{ color: '#00e676', fontWeight: 800 }}>{result.takeProfit3 ?? '—'}</div>
+                  </div>
+                </div>
+
+                {/* Bottom strip */}
+                <div className={styles.levelsStrip}>
+                  <div>S: <span style={{ color: '#00e676' }}>{result.stopLoss ?? '—'}</span></div>
+                  <div>R: <span style={{ color: '#ff4444' }}>{result.takeProfit3 ?? '—'}</span></div>
+                </div>
+              </div>
+
+              {/* ── 4 ANALYSIS CARDS ── */}
+              <div className={styles.analysisGrid}>
+                {[
+                  { icon: '🕯️', label: 'Price Action',     text: result.priceAction },
+                  { icon: '📐', label: 'S/R & Liquidity',  text: result.supportResistance },
+                  { icon: '📊', label: 'Indicators',        text: result.technicalIndicators },
+                  { icon: '🌐', label: 'MTF Confluence',    text: result.marketSentiment },
+                ].map(({ icon, label, text }) => (
+                  <div key={label} className={styles.analysisCard}>
+                    <div className={styles.analysisCardIcon}>{icon}</div>
+                    <div className={styles.analysisCardLabel}>{label}</div>
+                    <div className={styles.analysisCardText}>{text}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ── TAGS ── */}
+              <div className={styles.tagsRow}>
+                {(result.tags || []).map((tag, i) => (
+                  <div key={i} className={styles.tag}
+                    style={{
+                      borderColor: tag.toLowerCase().includes('bull') || tag === 'BUY' ? 'rgba(0,230,118,0.4)' :
+                                   tag.toLowerCase().includes('bear') || tag === 'SELL' ? 'rgba(255,68,68,0.4)' : 'rgba(255,255,255,0.15)',
+                      color: tag.toLowerCase().includes('bull') || tag === 'BUY' ? '#00e676' :
+                             tag.toLowerCase().includes('bear') || tag === 'SELL' ? '#ff4444' : '#aaa'
+                    }}
+                  >{tag}</div>
+                ))}
+              </div>
+
+              {/* ── SUMMARY ── */}
+              <div className={styles.summaryCard}>
+                <div className={styles.summaryLabel}>AI Trade Rationale</div>
+                <div className={styles.summaryText}>{result.summary}</div>
+                <div className={styles.annotationFooter}>ANNOTATED BY NAVIGATOR AI</div>
+              </div>
+
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!loading && !result && !error && (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyOrb}>◎</div>
+              <div className={styles.emptyTitle}>Ready to Scan</div>
+              <div className={styles.emptySubtitle}>Enter a symbol above and tap Scan to begin AI analysis</div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── Hero ── */}
-      <div className={styles.hero}>
-        <div className={styles.eyebrow}>◈ NAVIGATOR AI — Multi-Timeframe Mean Reversion</div>
-        <h1 className={styles.heroTitle}>
-          Enter Any Symbol,<br />
-          <span className={styles.grad}>Get Real AI Analysis</span>
-        </h1>
-        <p className={styles.heroSub}>
-          Higher timeframe trend confirmation + lower timeframe mean reversion entry.
-          The most accurate and consistent strategy in algorithmic trading.
-        </p>
-      </div>
-
-      {/* ── Strategy Info Banner ── */}
-      <div style={{
-        background: 'rgba(0,229,255,0.05)',
-        border: '1px solid rgba(0,229,255,0.15)',
-        borderRadius: 14,
-        padding: '14px 18px',
-        marginBottom: 20,
-        display: 'flex',
-        gap: 16,
-        flexWrap: 'wrap',
-        alignItems: 'center'
-      }}>
-        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.7rem', color: 'var(--cyan)', letterSpacing: '0.08em' }}>
-          HOW IT WORKS
-        </div>
-        {[
-          { step: '1', label: 'HTF Trend', desc: `${htfLabel} SMA 20/50` },
-          { step: '2', label: 'LTF Pullback', desc: `${interval} to SMA 20` },
-          { step: '3', label: 'RSI Zone', desc: '30-50 buy / 50-70 sell' },
-          { step: '4', label: 'Entry Signal', desc: 'Candle confirmation' },
-        ].map(({ step, label, desc }) => (
-          <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{
-              width: 22, height: 22, borderRadius: '50%',
-              background: 'rgba(0,229,255,0.15)',
-              border: '1px solid rgba(0,229,255,0.3)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontFamily: "'DM Mono', monospace", fontSize: '0.65rem', color: 'var(--cyan)'
-            }}>{step}</div>
-            <div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.68rem', color: 'var(--text)' }}>{label}</div>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.62rem', color: 'var(--muted)' }}>{desc}</div>
+      {/* ══════════════════════════════════════════
+          MULTI-TF TAB
+      ══════════════════════════════════════════ */}
+      {activeTab === 'Multi-TF' && (
+        <div className={styles.tabContent}>
+          {!symbol.trim() ? (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyOrb}>◎</div>
+              <div className={styles.emptyTitle}>Enter a Symbol First</div>
+              <div className={styles.emptySubtitle}>Go to Scanner tab, enter a symbol, then come back here</div>
             </div>
-          </div>
-        ))}
-      </div>
+          ) : htfLoading ? (
+            <div className={styles.analyzingCard}>
+              <div className={styles.analyzingOrb}>
+                <div className={styles.analyzingRing} />
+                <div className={styles.analyzingCore}>◎</div>
+              </div>
+              <div className={styles.analyzingTitle}>Multi-TF Scan</div>
+              <div className={styles.analyzingSubtitle}>Scanning 15min · 1h · 4h · 1day simultaneously...</div>
+            </div>
+          ) : htfResults.length > 0 ? (
+            <div className={styles.mtfGrid}>
+              <div className={styles.mtfHeader}>{symbol.toUpperCase()} — Multi-Timeframe Analysis</div>
+              {htfResults.map(r => (
+                <div key={r.tf} className={styles.mtfCard}>
+                  <div className={styles.mtfCardTop}>
+                    <span className={styles.mtfTf}>{r.tf}</span>
+                    <span style={{ color: getDirectionColor(r.direction), fontWeight: 800, fontSize: '0.85rem' }}>
+                      {r.direction === 'BUY' ? '▲' : r.direction === 'SELL' ? '▼' : '◆'} {r.direction}
+                    </span>
+                    <span className={styles.mtfMl} style={{ color: getMlColor(r.mlScore ?? 50) }}>{r.mlScore}/100</span>
+                  </div>
+                  <div className={styles.mtfSetup}>{r.setupName}</div>
+                  <div className={styles.mtfLevels}>
+                    <span style={{ color: '#ff4444' }}>SL {r.stopLoss}</span>
+                    <span style={{ color: '#00bcd4' }}>E {r.entryPrice}</span>
+                    <span style={{ color: '#00e676' }}>T1 {r.takeProfit1}</span>
+                  </div>
+                  <div className={styles.mtfTrend} style={{ color: getTrendColor(r.htfTrend) }}>
+                    HTF: {r.htfTrend} · RSI: {r.rsiReading?.split(' ')[1] ?? '—'}
+                  </div>
+                </div>
+              ))}
+              <button className={styles.scanBtn} style={{ marginTop: 12 }} onClick={runMultiTF}>↻ Refresh</button>
+            </div>
+          ) : (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyOrb}>◎</div>
+              <div className={styles.emptyTitle}>Multi-TF Ready</div>
+              <div className={styles.emptySubtitle}>Tap the tab to scan {symbol || 'your symbol'} across all timeframes</div>
+              <button className={styles.scanBtn} style={{ marginTop: 20 }} onClick={runMultiTF}>Run Multi-TF Scan</button>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* ── Input Card ── */}
-      <div className={styles.inputCard}>
-        <div className={styles.popularRow}>
-          {POPULAR.map(p => (
-            <button
-              key={p}
-              className={`${styles.popularBtn} ${symbol === p ? styles.popularBtnActive : ''}`}
-              onClick={() => setSymbol(p)}
-            >{p}</button>
+      {/* ══════════════════════════════════════════
+          WATCHLIST TAB
+      ══════════════════════════════════════════ */}
+      {activeTab === 'Watchlist' && (
+        <div className={styles.tabContent}>
+          <div className={styles.watchlistHeader}>
+            <div className={styles.sectionCardLabel}>Your Watchlist</div>
+            <button className={styles.scanBtn} onClick={scanWatchlist} disabled={scanning || watchlist.length === 0} style={{ padding: '6px 14px', fontSize: '0.78rem' }}>
+              {scanning ? '⏳ Scanning...' : '▶ Scan All'}
+            </button>
+          </div>
+          {watchlist.length === 0 ? (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyOrb}>◎</div>
+              <div className={styles.emptyTitle}>No Pairs Watched</div>
+              <div className={styles.emptySubtitle}>Scan a symbol and tap + Watch to add it here for automatic alerts</div>
+            </div>
+          ) : (
+            <div className={styles.watchlistGrid}>
+              {watchlist.map(w => (
+                <div key={w.symbol} className={styles.watchCard}>
+                  <div className={styles.watchCardTop}>
+                    <span className={styles.watchSymbol}>{w.symbol}</span>
+                    <span className={styles.watchTf}>{w.interval}</span>
+                    <button className={styles.watchRemove} onClick={() => removeFromWatchlist(w.symbol)}>✕</button>
+                  </div>
+                  <button
+                    className={styles.watchScanBtn}
+                    onClick={() => { setSymbol(w.symbol); setInterval(w.interval); setActiveTab('Scanner'); analyzeSymbol(w.symbol, w.interval) }}
+                  >Scan Now →</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {lastScan && (
+            <div className={styles.lastScan}>Last scan: {lastScan.toLocaleTimeString()}</div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          LEARN TAB
+      ══════════════════════════════════════════ */}
+      {activeTab === 'Learn' && (
+        <div className={styles.tabContent}>
+          {[
+            { title: 'HTF Trend Filter', icon: '📈', text: 'Only trade in the direction of the higher timeframe trend. If the 4H shows a downtrend, only take SELL signals on the 15min. This alone eliminates the majority of losing trades.' },
+            { title: 'Mean Reversion Entry', icon: '🎯', text: 'Wait for price to pull back to the SMA 20 after a breakout. This gives you a low-risk entry at the mean with tight stop loss and high reward potential.' },
+            { title: 'RSI Zone Filter', icon: '📊', text: 'For BUY signals, RSI should be between 30-50 (recovering from oversold). For SELL signals, RSI between 50-70 (pulling back from overbought). Avoid entries at extremes.' },
+            { title: 'ATR-Based Risk', icon: '🛡️', text: 'Stop Loss at 1.5x ATR from entry. This adapts to current volatility — wider in volatile markets, tighter in calm ones. Take Profit at 2x, 3.5x and 5x ATR for 3 targets.' },
+            { title: 'ML Score Guide', icon: '🤖', text: 'Above 70 = High probability setup. All indicators aligned. 50-70 = Moderate confluence. Take smaller size. Below 50 = Weak setup. Wait for better conditions.' },
+            { title: 'Candlestick Confirmation', icon: '🕯️', text: 'Always wait for candle pattern confirmation at your entry zone. A Bullish Engulfing or Pin Bar at SMA 20 support dramatically increases win probability.' },
+          ].map(({ title, icon, text }) => (
+            <div key={title} className={styles.learnCard}>
+              <div className={styles.learnIcon}>{icon}</div>
+              <div>
+                <div className={styles.learnTitle}>{title}</div>
+                <div className={styles.learnText}>{text}</div>
+              </div>
+            </div>
           ))}
         </div>
-        <div className={styles.inputRow}>
-          <input
-            className={styles.symbolInput}
-            type="text"
-            placeholder="e.g. EUR/USD, BTC/USD, XAU/USD, SPY"
-            value={symbol}
-            onChange={e => setSymbol(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && analyzeSymbol()}
-          />
-          <select className={styles.intervalSelect} value={interval} onChange={e => setInterval(e.target.value)}>
-            {INTERVALS.map(i => <option key={i} value={i}>{i}</option>)}
-          </select>
-          <button className={styles.analyzeBtn} onClick={analyzeSymbol} disabled={!symbol.trim() || loading}>
-            {loading ? 'Scanning...' : '🧭 Scan'}
-          </button>
+      )}
+
+      {/* ── BOTTOM NAV ── */}
+      <div className={styles.bottomNav}>
+        <div className={styles.navDisclaimer}>
+          Use this analysis to inform your own decisions
         </div>
-        {symbol.trim() && (
-          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button
-              className={`${styles.watchBtn} ${isInWatchlist ? styles.watchBtnActive : ''}`}
-              onClick={() => isInWatchlist ? removeFromWatchlist(symbol.trim().toUpperCase()) : addToWatchlist(symbol.trim(), interval)}
-            >
-              {isInWatchlist ? '✓ Watching' : '+ Watch & Alert'}
-            </button>
-            {isInWatchlist && (
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.72rem', color: 'var(--green)' }}>
-                Will alert on signal
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* ── Error ── */}
-      {error && <div className={styles.errorBox}>⚠ {error}</div>}
-
-      {/* ── Loading ── */}
-      {loading && (
-        <div className={styles.loadingWrap}>
-          <div className={styles.pulseLoader}><div className={styles.pulseCore} /></div>
-          <div className={styles.loadingText}>Fetching {htfLabel} trend + {interval} entry data...</div>
-        </div>
-      )}
-
-      {/* ── Results ── */}
-      {result && (
-        <div className={styles.results}>
-
-          {/* Header row */}
-          <div className={styles.resultsHeader}>
-            <div className={styles.resultsTitle}>Analysis Complete</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span className={styles.pairBadge}>{result.pair}</span>
-              <span className={styles.tfBadge}>{result.timeframe}</span>
-              {result.currentPrice && <span className={styles.tfBadge}>@ {result.currentPrice}</span>}
-              <span className={styles.badge}>LIVE DATA</span>
-            </div>
-          </div>
-
-          {/* ── HTF TREND CARD ── */}
-          <div style={{
-            background: 'var(--card)',
-            border: `1px solid ${result.htfTrend === 'BULLISH' ? 'rgba(0,245,160,0.25)' : result.htfTrend === 'BEARISH' ? 'rgba(255,77,166,0.25)' : 'rgba(255,190,11,0.25)'}`,
-            borderRadius: 16,
-            padding: 20,
-            marginBottom: 16,
-            position: 'relative',
-            overflow: 'hidden'
-          }}>
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: getTrendColor(result.htfTrend) }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-              <div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.68rem', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Higher Timeframe Trend ({result.htfTimeframe})
-                </div>
-                <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '1.6rem', color: getTrendColor(result.htfTrend) }}>
-                  {result.htfTrend === 'BULLISH' ? '▲' : result.htfTrend === 'BEARISH' ? '▼' : '◆'} {result.htfTrend ?? '—'}
-                </div>
-                <div style={{ fontSize: '0.84rem', color: '#c9d1e8', marginTop: 6, lineHeight: 1.5 }}>
-                  {result.htfAnalysis}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.68rem', color: 'var(--muted)', marginBottom: 4 }}>ML SCORE</div>
-                <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '2rem', color: getMlColor(result.mlScore ?? 50) }}>
-                  {result.mlScore ?? '—'}<span style={{ fontSize: '1rem', opacity: 0.6 }}>/100</span>
-                </div>
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.68rem', color: 'var(--muted)', marginTop: 4 }}>
-                  PULLBACK: <span style={{ color: 'var(--text)' }}>{result.pullbackScore ?? '—'}/100</span>
-                </div>
-              </div>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 99, overflow: 'hidden' }}>
-                <div style={{ height: '100%', borderRadius: 99, width: `${result.mlScore ?? 50}%`, background: `linear-gradient(90deg, var(--violet), ${getMlColor(result.mlScore ?? 50)})`, transition: 'width 1s ease' }} />
-              </div>
-            </div>
-          </div>
-
-          {/* Setup name + pattern */}
-          <div className={styles.sentimentCard} style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ flex: 1 }}>
-                <div className={styles.sentimentLabel}>Setup Detected</div>
-                <div style={{ fontSize: '0.95rem', fontFamily: "'Syne', sans-serif", fontWeight: 800, color: 'var(--cyan)', marginTop: 4 }}>
-                  {result.setupName ?? '—'}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-              {[
-                { label: 'TREND',      val: result.trendDirection },
-                { label: 'STRENGTH',   val: result.trendStrength },
-                { label: 'PATTERN',    val: result.candlePattern },
-                { label: 'MEAN ZONE',  val: result.meanReversionZone?.split('.')[0] },
-              ].map(({ label, val }) => (
-                <div key={label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '6px 12px', border: '1px solid var(--border)', maxWidth: 200 }}>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.62rem', color: 'var(--muted)', marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: '0.72rem', color: 'var(--text)' }}>{val ?? '—'}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Trade Setup Card */}
-          <div className={`${styles.tradeCard} ${isBuy ? styles.tradeCardBuy : styles.tradeCardSell}`}>
-            <div className={styles.tradeCardTop}>
-              <div>
-                <div className={styles.tradeLabel}>Signal</div>
-                <div className={`${styles.directionBadge} ${isBuy ? styles.directionBuy : styles.directionSell}`}>
-                  {isBuy ? '▲ BUY' : isSell ? '▼ SELL' : '— WAIT'}
-                </div>
-              </div>
-              <div>
-                <div className={styles.tradeLabel}>Entry Price</div>
-                <div className={styles.tradePrice}>{result.entryPrice ?? '—'}</div>
-              </div>
-              <div>
-                <div className={styles.tradeLabel}>Risk / Reward</div>
-                <div className={styles.tradeRR}>{result.riskReward ?? '—'}</div>
-              </div>
-            </div>
-
-            <div className={styles.tradeLevels}>
-              <div className={styles.levelRow}>
-                <div className={styles.levelDot} style={{ background: 'var(--pink)' }} />
-                <div className={styles.levelLabel}>Stop Loss <span className={styles.tpHint}>(ATR x1.5)</span></div>
-                <div className={styles.levelLine} style={{ background: 'rgba(255,77,166,0.3)' }} />
-                <div className={styles.levelPrice} style={{ color: 'var(--pink)' }}>{result.stopLoss ?? '—'}</div>
-              </div>
-              <div className={styles.levelRow}>
-                <div className={styles.levelDot} style={{ background: 'var(--cyan)' }} />
-                <div className={styles.levelLabel}>Entry</div>
-                <div className={styles.levelLine} style={{ background: 'rgba(0,229,255,0.3)' }} />
-                <div className={styles.levelPrice} style={{ color: 'var(--cyan)' }}>{result.entryPrice ?? '—'}</div>
-              </div>
-              <div className={styles.levelRow}>
-                <div className={styles.levelDot} style={{ background: 'var(--green)', opacity: 0.6 }} />
-                <div className={styles.levelLabel}>TP 1 <span className={styles.tpHint}>(ATR x2)</span></div>
-                <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.2)' }} />
-                <div className={styles.levelPrice} style={{ color: 'var(--green)', opacity: 0.7 }}>{result.takeProfit1 ?? '—'}</div>
-              </div>
-              <div className={styles.levelRow}>
-                <div className={styles.levelDot} style={{ background: 'var(--green)' }} />
-                <div className={styles.levelLabel}>TP 2 <span className={styles.tpHint}>(ATR x3.5)</span></div>
-                <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.3)' }} />
-                <div className={styles.levelPrice} style={{ color: 'var(--green)' }}>{result.takeProfit2 ?? '—'}</div>
-              </div>
-              <div className={styles.levelRow}>
-                <div className={styles.levelDot} style={{ background: 'var(--green)', boxShadow: '0 0 8px var(--green)' }} />
-                <div className={styles.levelLabel}>TP 3 <span className={styles.tpHint}>(ATR x5)</span></div>
-                <div className={styles.levelLine} style={{ background: 'rgba(0,245,160,0.4)' }} />
-                <div className={styles.levelPrice} style={{ color: 'var(--green)', fontWeight: 800 }}>{result.takeProfit3 ?? '—'}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Sentiment */}
-          <div className={styles.sentimentCard}>
-            <div className={styles.sentimentLabel}>Overall Market Sentiment</div>
-            <div className={styles.sentimentRow}>
-              <div className={styles.sentimentValue} style={{ color: getSentimentColor(result.sentimentScore) }}>
-                {result.sentiment}
-              </div>
-              <div className={styles.sentimentBarWrap}>
-                <div className={styles.sentimentBar} style={{ width: `${result.sentimentScore}%`, background: getSentimentGradient(result.sentimentScore) }} />
-              </div>
-            </div>
-            <div className={styles.tagsRow}>
-              {(result.tags || []).map((tag, i) => (
-                <span key={i} className={`${styles.tag} ${getTagClass(tag)}`}>{tag}</span>
-              ))}
-            </div>
-          </div>
-
-          {/* 4-card grid */}
-          <div className={styles.grid}>
-            <div className={`${styles.card} ${styles.cardCyan}`}>
-              <div className={styles.cardIcon}>🕯️</div>
-              <div className={styles.cardTitle}>Candle Pattern</div>
-              <div className={styles.cardContent}>{result.priceAction}</div>
-            </div>
-            <div className={`${styles.card} ${styles.cardViolet}`}>
-              <div className={styles.cardIcon}>📐</div>
-              <div className={styles.cardTitle}>Support &amp; Resistance</div>
-              <div className={styles.cardContent}>{result.supportResistance}</div>
-            </div>
-            <div className={`${styles.card} ${styles.cardPink}`}>
-              <div className={styles.cardIcon}>📊</div>
-              <div className={styles.cardTitle}>SMA &amp; RSI Readings</div>
-              <div className={styles.cardContent}>{result.technicalIndicators}</div>
-            </div>
-            <div className={`${styles.card} ${styles.cardAmber}`}>
-              <div className={styles.cardIcon}>🌐</div>
-              <div className={styles.cardTitle}>MTF Confluence</div>
-              <div className={styles.cardContent}>{result.marketSentiment}</div>
-            </div>
-          </div>
-
-          {/* Summary */}
-          <div className={styles.summaryCard}>
-            <div className={styles.summaryLabel}>✦ NAVIGATOR AI — Trade Rationale &amp; Risk Warning</div>
-            <div className={styles.summaryText}>{result.summary}</div>
-          </div>
-
-        </div>
-      )}
     </div>
   )
 }
