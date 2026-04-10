@@ -16,7 +16,7 @@ export default function LandingPage() {
   return (
     <div className={styles.page}>
 
-      {/* ── NAV ── */}
+      {/* NAV */}
       <nav className={styles.nav}>
         <div className={styles.navLogo}>
           <div className={styles.navLogoIcon}>🧭</div>
@@ -28,7 +28,7 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* ── HERO ── */}
+      {/* HERO */}
       <section className={styles.hero}>
         <div className={styles.heroEyebrow}>★★★★★ &nbsp; TRUSTED BY 500+ TRADERS</div>
         <h1 className={styles.heroTitle}>
@@ -40,11 +40,19 @@ export default function LandingPage() {
         </p>
         <div className={styles.heroBtns}>
           <button className={styles.heroCta} onClick={() => navigate('/auth')}>Start Scanning Free →</button>
+          <a
+            className={styles.heroApk}
+            href="https://appsgeyser.io/19721846/Navigator%20AI"
+            target="_blank"
+            rel="noreferrer"
+          >
+            📲 Download Android App
+          </a>
         </div>
         <div className={styles.heroDisclaimer}>~Not financial advice &nbsp;·&nbsp; +AI-powered analysis &nbsp;·&nbsp; *You make the final call</div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
+      {/* HOW IT WORKS */}
       <section className={styles.section}>
         <div className={styles.sectionEyebrow}>HOW IT WORKS</div>
         <h2 className={styles.sectionTitle}>Three steps. Ten seconds.</h2>
@@ -70,7 +78,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── FEATURES ── */}
+      {/* FEATURES */}
       <section className={styles.section}>
         <div className={styles.sectionEyebrow}>FEATURES</div>
         <h2 className={styles.sectionTitle}>Everything you need to trade smarter</h2>
@@ -108,7 +116,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── FOR EVERY TRADER ── */}
+      {/* FOR EVERY TRADER */}
       <section className={styles.section}>
         <div className={styles.sectionEyebrow}>FOR EVERY TRADER</div>
         <h2 className={styles.sectionTitle}>We welcome everyone. Beginner or pro.</h2>
@@ -128,7 +136,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── REVIEWS ── */}
+      {/* REVIEWS */}
       <section className={styles.section}>
         <div className={styles.sectionEyebrow}>TRADER REVIEWS</div>
         <h2 className={styles.sectionTitle}>What Traders Are Saying</h2>
@@ -151,7 +159,7 @@ export default function LandingPage() {
         <div className={styles.reviewsFooter}>★★★★★ &nbsp; 4.7/5 average from 500+ traders</div>
       </section>
 
-      {/* ── CTA ── */}
+      {/* CTA */}
       <section className={styles.ctaSection}>
         <div className={styles.ctaInner}>
           <div className={styles.ctaIcon}>🧭</div>
@@ -162,11 +170,19 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── FOOTER ── */}
+      {/* FOOTER */}
       <footer className={styles.footer}>
         <div className={styles.footerLogo}>
           <span>🧭</span> NAVIGATOR AI
         </div>
+        <a
+          className={styles.footerApk}
+          href="https://appsgeyser.io/19721846/Navigator%20AI"
+          target="_blank"
+          rel="noreferrer"
+        >
+          📲 Download Android App
+        </a>
         <div className={styles.footerDisclaimer}>
           Chart analysis for educational purposes only. Not financial advice. Always manage your risk.
         </div>
