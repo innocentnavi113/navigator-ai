@@ -477,3 +477,30 @@
   text-decoration: none;
 }
 .footerApk:hover { background: rgba(0,229,255,0.15); }
+.heroApk {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.3);
+  color: #00e5ff;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.heroApk:hover { background: rgba(0,229,255,0.15); }
+
+.footerApk {
+  display: inline-block;
+  margin: 10px 0;
+  padding: 10px 20px;
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.25);
+  color: #00e5ff;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+.footerApk:hover { background: rgba(0,229,255,0.15); }
