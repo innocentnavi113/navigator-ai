@@ -71,8 +71,8 @@ export default function App() {
         />
 
         {/* Catch-all */}
-        <Route path="*" element={<Navigate to="/" replace />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )
