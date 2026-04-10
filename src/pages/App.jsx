@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
 import LandingPage from './pages/LandingPage'
+import AdminPage from './pages/AdminPage'
 
 function ProtectedRoute({ session, children }) {
   if (session === undefined) {
@@ -71,6 +72,7 @@ export default function App() {
 
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/admin" element={<AdminPage />} />
       </Routes>
     </BrowserRouter>
   )
