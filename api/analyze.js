@@ -133,7 +133,7 @@ Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markd
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'openrouter/auto',
+        model: 'google/gemini-flash-1.5',
         max_tokens: 1000,
         messages: [{ role: 'user', content: prompt }]
       })
