@@ -133,7 +133,7 @@ Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markd
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'google/gemini-flash-1.5',
+        model: 'google/gemini-pro',
         max_tokens: 1000,
         messages: [{ role: 'user', content: prompt }]
       })
