@@ -4,6 +4,7 @@ import { useAlerts } from '../useAlerts'
 import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
 import styles from './Dashboard.module.css'
+import ChartScanner from './ChartScanner'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
 const POPULAR = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY', 'US30']
@@ -19,7 +20,7 @@ const SCAN_STEPS = [
   'Calculating indicators',
   'Generating signal',
 ]
-const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Learn']
+const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Chart', 'Learn']
 
 export default function Dashboard({ session }) {
   const [activeTab,     setActiveTab]     = useState('Scanner')
@@ -569,6 +570,13 @@ export default function Dashboard({ session }) {
           {lastScan && <div className={styles.lastScan}>Last scan: {lastScan.toLocaleTimeString()}</div>}
         </div>
       )}
+
+      {/* CHART SCANNER TAB */}
+      {activeTab === 'Chart' && (
+       <div className={styles.tabContent}>
+         <ChartScanner plan={plan} />
+       </div>
+     )}
 
       {/* ══════════ LEARN TAB ══════════ */}
       {activeTab === 'Learn' && (
