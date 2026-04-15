@@ -4,12 +4,11 @@ import { useAlerts } from '../useAlerts'
 import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
 import styles from './Dashboard.module.css'
-import ChartScanner from './ChartScanner'
-
-// ✅ NEWS IMPORTS
 import { useNewsFeed } from '../hooks/useNewsFeed'
-import NewsFeedNotifier from '../components/NewsFeedNotifier'
-import NewsTab from '../components/NewsTab'
+
+import NewsFeedNotifier from '../components/dashboard/NewsFeedNotifier'
+import NewsTab from '../components/dashboard/NewsTab'
+import ChartScanner from '../components/dashboard/ChartScanner'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
 const POPULAR = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY']
