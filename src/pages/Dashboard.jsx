@@ -7,9 +7,9 @@ import ChartScanner from './ChartScanner'
 import NewsTab from './NewsTab'
 import NewsFeedNotifier from './NewsFeedNotifier'
 
-import { useAlerts } from '../useAlerts'
-import { useSubscription } from '../useSubscription'
-import { useNewsFeed } from '../useNewsFeed'
+import { useAlerts } from './useAlerts'
+import { useSubscription } from './useSubscription'
+import { useNewsFeed } from './useNewsFeed'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
 const POPULAR = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY']
