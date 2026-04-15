@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 // ── IndexedDB helpers ─────────────────────────────────────────────────
 function openDB() {
@@ -8,6 +8,7 @@ function openDB() {
       const db = e.target.result
       if (!db.objectStoreNames.contains('watchlist')) db.createObjectStore('watchlist', { keyPath: 'symbol' })
       if (!db.objectStoreNames.contains('settings'))  db.createObjectStore('settings',  { keyPath: 'key' })
+      if (!db.objectStoreNames.contains('seenNews'))  db.createObjectStore('seenNews',   { keyPath: 'id' })
     }
     req.onsuccess = e => resolve(e.target.result)
     req.onerror   = e => reject(e.target.error)
@@ -15,7 +16,7 @@ function openDB() {
 }
 
 async function dbGet(storeName, key) {
-  const db  = await openDB()
+  const db = await openDB()
   return new Promise((resolve, reject) => {
     const req = db.transaction(storeName, 'readonly').objectStore(storeName).get(key)
     req.onsuccess = e => resolve(e.target.result)
@@ -52,13 +53,17 @@ async function dbGetAll(storeName) {
 
 // ── Main hook ─────────────────────────────────────────────────────────
 export function useAlerts() {
-  const [alertsEnabled,    setAlertsEnabled]    = useState(false)
-  const [permission,       setPermission]       = useState('default')
-  const [watchlist,        setWatchlist]        = useState([])
-  const [minMlScore,       setMinMlScore]       = useState(60)
-  const [scanning,         setScanning]         = useState(false)
-  const [lastScan,         setLastScan]         = useState(null)
-  const [swRegistered,     setSwRegistered]     = useState(false)
+  const [alertsEnabled,  setAlertsEnabled]  = useState(false)
+  const [permission,     setPermission]     = useState('default')
+  const [watchlist,      setWatchlist]      = useState([])
+  const [minMlScore,     setMinMlScore]     = useState(60)
+  const [scanning,       setScanning]       = useState(false)
+  const [lastScan,       setLastScan]       = useState(null)
+  const [swRegistered,   setSwRegistered]   = useState(false)
+  const [newsAlerts,     setNewsAlerts]     = useState(true)   // news alerts on by default
+  const [latestNews,     setLatestNews]     = useState([])     // recent fetched news
+  const [lastNewsScan,   setLastNewsScan]   = useState(null)
+  const newsTimer = useRef(null)
 
   // Load saved settings on mount
   useEffect(() => {
@@ -68,6 +73,7 @@ export function useAlerts() {
         if (saved?.value) {
           setAlertsEnabled(saved.value.alertsEnabled || false)
           setMinMlScore(saved.value.minMlScore || 60)
+          setNewsAlerts(saved.value.newsAlerts !== false) // default true
         }
         const wl = await dbGetAll('watchlist')
         setWatchlist(wl)
@@ -88,15 +94,27 @@ export function useAlerts() {
 
   // Save settings whenever they change
   useEffect(() => {
-    dbPut('settings', { key: 'alertSettings', value: { alertsEnabled, minMlScore } })
-  }, [alertsEnabled, minMlScore])
+    dbPut('settings', { key: 'alertSettings', value: { alertsEnabled, minMlScore, newsAlerts } })
+  }, [alertsEnabled, minMlScore, newsAlerts])
 
-  // Auto-scan interval when alerts enabled
+  // Auto-scan watchlist every 5 mins when alerts enabled
   useEffect(() => {
     if (!alertsEnabled || watchlist.length === 0) return
-    const interval = setInterval(() => scanWatchlist(), 5 * 60 * 1000) // every 5 mins
+    const interval = setInterval(() => scanWatchlist(), 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [alertsEnabled, watchlist, minMlScore])
+
+  // Auto-scan news every 5 mins when alerts + newsAlerts enabled
+  useEffect(() => {
+    if (!alertsEnabled || !newsAlerts) {
+      if (newsTimer.current) clearInterval(newsTimer.current)
+      return
+    }
+    // Immediate scan on enable
+    scanNews()
+    newsTimer.current = setInterval(() => scanNews(), 5 * 60 * 1000)
+    return () => { if (newsTimer.current) clearInterval(newsTimer.current) }
+  }, [alertsEnabled, newsAlerts])
 
   // ── Request notification permission ──────────────────────────────────
   const requestPermission = useCallback(async () => {
@@ -115,8 +133,8 @@ export function useAlerts() {
       const granted = await requestPermission()
       if (!granted) return
       setAlertsEnabled(true)
-      // Trigger immediate scan
       setTimeout(() => scanWatchlist(), 1000)
+      setTimeout(() => scanNews(), 2000)
     } else {
       setAlertsEnabled(false)
     }
@@ -145,10 +163,10 @@ export function useAlerts() {
       navigator.serviceWorker.ready.then(reg => {
         reg.showNotification(title, {
           body,
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
+          icon:    '/icon-192.png',
+          badge:   '/icon-192.png',
           vibrate: [200, 100, 200],
-          tag: `signal-${data.pair || 'nav'}`,
+          tag:     data.tag || `nav-${Date.now()}`,
           data
         })
       })
@@ -165,7 +183,7 @@ export function useAlerts() {
 
     for (const item of watchlist) {
       try {
-        const res = await fetch('/api/analyze', {
+        const res  = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ symbol: item.symbol, interval: item.interval })
@@ -180,7 +198,7 @@ export function useAlerts() {
         sendNotification(
           `🧭 Navigator AI — ${direction} Signal`,
           `${pair} | Entry: ${entryPrice} | SL: ${stopLoss} | TP1: ${takeProfit1} | ML: ${mlScore}/100`,
-          { url: '/', pair, direction }
+          { url: '/', pair, direction, tag: `signal-${pair}` }
         )
       } catch (e) {
         console.log('Scan error for', item.symbol, e)
@@ -190,7 +208,78 @@ export function useAlerts() {
     setScanning(false)
   }, [scanning, watchlist, minMlScore, sendNotification])
 
-  // ── Send alert for a specific result (called from Dashboard) ─────────
+  // ── Scan news for high-impact / Trump alerts ──────────────────────────
+  const scanNews = useCallback(async () => {
+    if (Notification.permission !== 'granted') return
+    setLastNewsScan(new Date())
+
+    try {
+      const res  = await fetch('/api/news')
+      const data = await res.json()
+      if (!data.all) return
+
+      setLatestNews(data.all.slice(0, 10))
+
+      // Get already-seen article IDs from IndexedDB
+      const seenList = await dbGetAll('seenNews')
+      const seenIds  = new Set(seenList.map(s => s.id))
+
+      // Fire notifications for new Trump alerts
+      for (const article of (data.trumpAlerts || [])) {
+        const id = btoa(article.link || article.title).slice(0, 40)
+        if (seenIds.has(id)) continue
+        if (article.ageHours > 6) continue // skip old news
+
+        await dbPut('seenNews', { id, seenAt: Date.now() })
+
+        sendNotification(
+          `🚨 TRUMP ALERT — Market Impact`,
+          article.title,
+          {
+            tag: `trump-${id}`,
+            url: article.link,
+            type: 'news'
+          }
+        )
+
+        // Small delay between notifications
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      // Fire notifications for high-impact news
+      for (const article of (data.highImpact || []).slice(0, 3)) {
+        const id = btoa(article.link || article.title).slice(0, 40)
+        if (seenIds.has(id)) continue
+        if (article.ageHours > 3) continue // high impact only if very recent
+        if (article.score < 15)  continue  // only fire for very high scores
+
+        await dbPut('seenNews', { id, seenAt: Date.now() })
+
+        sendNotification(
+          `⚡ High Impact News — ${article.source}`,
+          article.title,
+          {
+            tag: `news-${id}`,
+            url: article.link,
+            type: 'news'
+          }
+        )
+
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      // Cleanup old seen news (older than 24h)
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000
+      for (const s of seenList) {
+        if (s.seenAt < cutoff) await dbDelete('seenNews', s.id)
+      }
+
+    } catch (e) {
+      console.log('News scan error:', e)
+    }
+  }, [sendNotification])
+
+  // ── Alert on signal from Dashboard ───────────────────────────────────
   const alertOnSignal = useCallback((result) => {
     if (!alertsEnabled || Notification.permission !== 'granted') return
     if (!result || result.direction === 'NO SIGNAL') return
@@ -199,9 +288,14 @@ export function useAlerts() {
     sendNotification(
       `🧭 Navigator AI — ${result.direction} Signal`,
       `${result.pair} | Entry: ${result.entryPrice} | SL: ${result.stopLoss} | TP1: ${result.takeProfit1} | ML: ${result.mlScore}/100`,
-      { url: '/', pair: result.pair, direction: result.direction }
+      { url: '/', pair: result.pair, direction: result.direction, tag: `signal-${result.pair}` }
     )
   }, [alertsEnabled, minMlScore, sendNotification])
+
+  // ── Toggle news alerts ────────────────────────────────────────────────
+  const toggleNewsAlerts = useCallback(() => {
+    setNewsAlerts(prev => !prev)
+  }, [])
 
   return {
     alertsEnabled,
@@ -211,11 +305,16 @@ export function useAlerts() {
     scanning,
     lastScan,
     swRegistered,
+    newsAlerts,
+    latestNews,
+    lastNewsScan,
     toggleAlerts,
+    toggleNewsAlerts,
     requestPermission,
     addToWatchlist,
     removeFromWatchlist,
     scanWatchlist,
+    scanNews,
     alertOnSignal,
     setMinMlScore,
   }

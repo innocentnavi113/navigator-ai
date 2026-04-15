@@ -5,6 +5,8 @@ import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
 import styles from './Dashboard.module.css'
 import ChartScanner from './ChartScanner'
+import NewsPanel from '../components/NewsPanel'
+
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
 const POPULAR = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY', 'US30']
@@ -141,6 +143,12 @@ export default function Dashboard({ session }) {
       />
     )
   }
+
+  const {
+  // ...existing ones...
+  newsAlerts, latestNews, lastNewsScan,
+  toggleNewsAlerts, scanNews,
+} = useAlerts() 
 
   const isInWatchlist = watchlist.some(w => w.symbol === symbol.trim().toUpperCase())
   const isBuy  = result?.direction === 'BUY'
@@ -322,6 +330,14 @@ export default function Dashboard({ session }) {
             <button className={styles.installBtn} onClick={handleInstall}>📲 Install App to Home Screen</button>
           )}
           <div className={styles.iosHint}>iPhone: Safari → Share → Add to Home Screen</div>
+          <NewsPanel
+           latestNews={latestNews}
+           lastNewsScan={lastNewsScan}
+           newsAlerts={newsAlerts}
+           toggleNewsAlerts={toggleNewsAlerts}
+           scanNews={scanNews} 
+          
+/>
           <div className={styles.settingRow} style={{ borderBottom: 'none', paddingTop: 14 }}>
             <div>
               <div className={styles.settingLabel}>Subscription</div>
