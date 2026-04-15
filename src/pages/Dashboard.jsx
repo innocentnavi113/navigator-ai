@@ -4,7 +4,7 @@ import { useAlerts } from '../useAlerts'
 import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
 import styles from './Dashboard.module.css'
-import ChartScanner from '../ChartScanner'
+import ChartScanner from './ChartScanner'
 
 // ✅ NEWS IMPORTS
 import { useNewsFeed } from '../hooks/useNewsFeed'
