@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { useAlerts } from '../useAlerts'
-import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
 import styles from './Dashboard.module.css'
-import { useNewsFeed } from '../hooks/useNewsFeed'
+import { useNewsFeed } from './useNewsFeed'
+import { useAlerts } from './useAlerts'
+import { useSubscription } from './useSubscription'
 
-import NewsFeedNotifier from '../components/dashboard/NewsFeedNotifier'
-import NewsTab from '../components/dashboard/NewsTab'
-import ChartScanner from '../components/dashboard/ChartScanner'
+import ChartScanner from './ChartScanner'
+import NewsTab from './NewsTab'
+import NewsFeedNotifier from './NewsFeedNotifier'
+
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
 const POPULAR = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY']
