@@ -1,16 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
-import { useAlerts } from '../useAlerts'
-import SubscriptionPage from './SubscriptionPage'
 import styles from './Dashboard.module.css'
-import { useNewsFeed } from './useNewsFeed'
-import { useAlerts } from './useAlerts'
-import { useSubscription } from './useSubscription'
 
+import SubscriptionPage from './SubscriptionPage'
 import ChartScanner from './ChartScanner'
 import NewsTab from './NewsTab'
 import NewsFeedNotifier from './NewsFeedNotifier'
 
+import { useAlerts } from '../useAlerts'
+import { useSubscription } from '../useSubscription'
+import { useNewsFeed } from '../useNewsFeed'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
 const POPULAR = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY']
@@ -34,7 +33,7 @@ export default function Dashboard({ session }) {
     plan, scansLeft, canScan, expiryDate, consumeScan
   } = useSubscription()
 
-  // ✅ NEWS HOOK
+  // NEWS HOOK
   const {
     articles,
     loading: newsLoading,
@@ -50,29 +49,24 @@ export default function Dashboard({ session }) {
   return (
     <div className={styles.app}>
 
-      {/* ✅ NOTIFICATIONS */}
+      {/* NOTIFICATIONS */}
       <NewsFeedNotifier
         notifications={notifications}
         onDismiss={dismissNotification}
         onClearAll={clearAllNotifications}
       />
 
-      {/* ── TABS ── */}
+      {/* TABS */}
       <div className={styles.tabBar}>
         {TABS.map(tab => (
           <button
             key={tab}
             className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`}
-            onClick={() => {
-              if (activeTab !== tab) {
-                setActiveTab(tab)
-              }
-            }}
+            onClick={() => setActiveTab(tab)}
             style={{ position: 'relative' }}
           >
             {tab}
 
-            {/* ✅ NEWS BADGE */}
             {tab === 'News' && unreadNewsCount > 0 && (
               <span style={{
                 position: 'absolute',
@@ -96,8 +90,7 @@ export default function Dashboard({ session }) {
         ))}
       </div>
 
-      {/* ───────── TABS CONTENT ───────── */}
-
+      {/* CONTENT */}
       {activeTab === 'Scanner' && (
         <div className={styles.tabContent}>
           Scanner Content...
@@ -122,7 +115,6 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ✅ NEWS TAB */}
       {activeTab === 'News' && (
         <div className={styles.tabContent}>
           <NewsTab
