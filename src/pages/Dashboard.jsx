@@ -7,7 +7,7 @@ import styles from './Dashboard.module.css'
 import ChartScanner from './ChartScanner'
 
 // ✅ NEWS IMPORTS
-import { useNewsFeed } from '../useNewsFeed'
+import { useNewsFeed } from '../hooks/useNewsFeed'
 import NewsFeedNotifier from './NewsFeedNotifier'
 import NewsTab from './NewsTab'
 
