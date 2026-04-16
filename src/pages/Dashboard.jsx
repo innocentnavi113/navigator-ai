@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import { useAlerts } from '../useAlerts'
 import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
-import NewsPanel from '../components/NewsPanel'
+import ChartScanner from './ChartScanner'
 import styles from './Dashboard.module.css'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
@@ -16,7 +16,7 @@ const SCAN_STEPS = [
   'Calculating indicators',
   'Generating signal',
 ]
-const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Learn']
+const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Chart', 'History', 'Learn']
 
 export default function Dashboard({ session }) {
   const [activeTab,     setActiveTab]     = useState('Scanner')
@@ -31,36 +31,21 @@ export default function Dashboard({ session }) {
   const [installPrompt, setInstallPrompt] = useState(null)
   const [htfResults,    setHtfResults]    = useState([])
   const [htfLoading,    setHtfLoading]    = useState(false)
+  const [recentScans,   setRecentScans]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem('navigator_recent_scans') || '[]') } catch { return [] }
+  })
   const scanTimer = useRef(null)
 
-  // ── ALL alerts destructured including news categories ──
   const {
-    alertsEnabled,
-    permission,
-    watchlist,
-    minMlScore,
-    scanning,
-    lastScan,
-    newsAlerts,
-    latestNews,
-    forexNews,
-    btcNews,
-    tweets,
-    trumpAlerts,
-    lastNewsScan,
-    toggleAlerts,
-    toggleNewsAlerts,
-    addToWatchlist,
-    removeFromWatchlist,
-    scanWatchlist,
-    scanNews,
-    alertOnSignal,
-    setMinMlScore,
+    alertsEnabled, permission, watchlist, minMlScore,
+    scanning, lastScan, newsAlerts, latestNews, forexNews,
+    btcNews, tweets, trumpAlerts, lastNewsScan,
+    toggleAlerts, toggleNewsAlerts, addToWatchlist,
+    removeFromWatchlist, scanWatchlist, scanNews,
+    alertOnSignal, setMinMlScore,
   } = useAlerts()
 
-  const {
-    plan, scansLeft, canScan, expiryDate, consumeScan
-  } = useSubscription()
+  const { plan, scansLeft, canScan, expiryDate, consumeScan } = useSubscription()
 
   const userName =
     session?.user?.user_metadata?.full_name ||
@@ -70,8 +55,7 @@ export default function Dashboard({ session }) {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeinstallprompt', e => {
-        e.preventDefault()
-        setInstallPrompt(e)
+        e.preventDefault(); setInstallPrompt(e)
       })
     }
   }, [])
@@ -95,6 +79,29 @@ export default function Dashboard({ session }) {
     }, 600)
   }
 
+  function saveRecentScan(scanResult, sym, intv) {
+    const entry = {
+      id: Date.now(),
+      symbol: sym,
+      interval: intv,
+      direction: scanResult.direction,
+      mlScore: scanResult.mlScore,
+      entryPrice: scanResult.entryPrice,
+      stopLoss: scanResult.stopLoss,
+      takeProfit1: scanResult.takeProfit1,
+      setupName: scanResult.setupName,
+      timestamp: new Date().toISOString(),
+    }
+    const updated = [entry, ...recentScans].slice(0, 50)
+    setRecentScans(updated)
+    try { localStorage.setItem('navigator_recent_scans', JSON.stringify(updated)) } catch {}
+  }
+
+  function clearRecentScans() {
+    setRecentScans([])
+    try { localStorage.removeItem('navigator_recent_scans') } catch {}
+  }
+
   async function analyzeSymbol(sym = symbol, intv = interval) {
     if (!sym.trim()) return
     if (!canScan) { setShowUpgrade(true); return }
@@ -115,7 +122,10 @@ export default function Dashboard({ session }) {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'API request failed')
       setResult(data.result)
-      if (data.result) alertOnSignal(data.result)
+      if (data.result) {
+        alertOnSignal(data.result)
+        saveRecentScan(data.result, sym.trim().toUpperCase(), intv)
+      }
     } catch (err) {
       setError('Analysis failed: ' + (err.message || 'Unknown error.'))
     } finally {
@@ -190,7 +200,7 @@ export default function Dashboard({ session }) {
   return (
     <div className={styles.app}>
 
-      {/* ── TOP BAR ── */}
+      {/* TOP BAR */}
       <div className={styles.topBar}>
         <div className={styles.topLeft}>
           <div className={styles.logoMark}>
@@ -211,15 +221,14 @@ export default function Dashboard({ session }) {
             {plan === 'premium' ? 'Premium' : plan === 'standard' ? 'Standard' : 'Free'}
           </button>
           <button
-            className={`${styles.iconBtn} ${showSettings ? styles.iconBtnActive : ''}`}
-            onClick={() => setShowSettings(prev => !prev)}
-            title="Alerts & News"
+            className={`${styles.iconBtn} ${alertsEnabled ? styles.iconBtnActive : ''}`}
+            onClick={() => setShowSettings(!showSettings)}
           >🔔</button>
-          <button className={styles.iconBtn} onClick={handleSignOut} title="Sign out">⏻</button>
+          <button className={styles.iconBtn} onClick={handleSignOut}>⏻</button>
         </div>
       </div>
 
-      {/* ── SCAN COUNTER BAR ── */}
+      {/* SCAN COUNTER BAR */}
       {plan !== 'premium' && (
         <div className={styles.scanCountBar}>
           <div className={styles.scanCountInfo}>
@@ -228,7 +237,9 @@ export default function Dashboard({ session }) {
             </span>
             <span className={styles.scanCountSub}> · {plan} plan</span>
           </div>
-          <button className={styles.upgradeLink} onClick={() => setShowUpgrade(true)}>Upgrade ↗</button>
+          <button className={styles.upgradeLink} onClick={() => setShowUpgrade(true)}>
+            Upgrade ↗
+          </button>
         </div>
       )}
 
@@ -239,7 +250,7 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ── TABS ── */}
+      {/* TABS */}
       <div className={styles.tabBar}>
         {TABS.map(tab => (
           <button
@@ -250,7 +261,7 @@ export default function Dashboard({ session }) {
         ))}
       </div>
 
-      {/* ── SYMBOL INPUT ── */}
+      {/* SYMBOL INPUT */}
       <div className={styles.inputSection}>
         <div className={styles.symbolRow}>
           <div className={styles.symbolInputWrap}>
@@ -264,10 +275,15 @@ export default function Dashboard({ session }) {
               onKeyDown={e => e.key === 'Enter' && analyzeSymbol()}
             />
           </div>
-          <select className={styles.tfSelect} value={interval} onChange={e => setInterval(e.target.value)}>
+          <select
+            className={styles.tfSelect}
+            value={interval}
+            onChange={e => setInterval(e.target.value)}
+          >
             {INTERVALS.map(i => <option key={i} value={i}>{i}</option>)}
           </select>
         </div>
+
         <div className={styles.pairsRow}>
           {POPULAR.map(p => (
             <button
@@ -277,6 +293,7 @@ export default function Dashboard({ session }) {
             >{p}</button>
           ))}
         </div>
+
         <div className={styles.actionRow}>
           <div className={styles.strategistBadge}>
             <span className={styles.strategistDot} />
@@ -292,6 +309,14 @@ export default function Dashboard({ session }) {
               {isInWatchlist ? '✓ Watching' : '+ Watch'}
             </button>
           )}
+          {recentScans.length > 0 && (
+            <button
+              className={styles.clearScansChip}
+              onClick={clearRecentScans}
+            >
+              🗑 Clear History
+            </button>
+          )}
           <button
             className={styles.scanBtn}
             onClick={() => analyzeSymbol()}
@@ -303,64 +328,34 @@ export default function Dashboard({ session }) {
         </div>
       </div>
 
-      {/* ── ALERT SETTINGS PANEL ── */}
+      {/* ALERT SETTINGS */}
       {showSettings && (
         <div className={styles.settingsPanel}>
           <div className={styles.settingsPanelHeader}>
-            <span>🔔 Alerts & News</span>
+            <span>🔔 Alert Settings</span>
             <button className={styles.closeBtn} onClick={() => setShowSettings(false)}>✕</button>
           </div>
-
-          {/* Push notifications toggle */}
           <div className={styles.settingRow}>
             <div>
               <div className={styles.settingLabel}>Push Notifications</div>
-              <div className={styles.settingDesc}>
-                {permission === 'granted' ? '✓ Granted' :
-                 permission === 'denied'  ? '✗ Denied — check browser settings' :
-                 'Click to enable'}
-              </div>
+              <div className={styles.settingDesc}>{permission === 'granted' ? '✓ Granted' : 'Click to enable'}</div>
             </div>
-            <button
-              className={`${styles.toggleBtn} ${alertsEnabled ? styles.toggleBtnOn : ''}`}
-              onClick={toggleAlerts}
-            >{alertsEnabled ? 'ON' : 'OFF'}</button>
+            <button className={`${styles.toggleBtn} ${alertsEnabled ? styles.toggleBtnOn : ''}`} onClick={toggleAlerts}>
+              {alertsEnabled ? 'ON' : 'OFF'}
+            </button>
           </div>
-
-          {/* Min ML score */}
           <div className={styles.settingRow}>
             <div>
               <div className={styles.settingLabel}>Min ML Score: {minMlScore}</div>
               <div className={styles.settingDesc}>Only alert above this score</div>
             </div>
-            <input
-              type="range" min="40" max="90" value={minMlScore}
-              onChange={e => setMinMlScore(Number(e.target.value))}
-              style={{ width: 80 }}
-            />
+            <input type="range" min="40" max="90" value={minMlScore}
+              onChange={e => setMinMlScore(Number(e.target.value))} style={{ width: 80 }} />
           </div>
-
-          {/* iOS install hint */}
-          {installPrompt ? (
+          {installPrompt && (
             <button className={styles.installBtn} onClick={handleInstall}>📲 Install App to Home Screen</button>
-          ) : (
-            <div className={styles.iosHint}>📱 iPhone: Safari → Share → Add to Home Screen</div>
           )}
-
-          {/* ── NEWS PANEL — receives ALL news categories ── */}
-          <NewsPanel
-            latestNews={latestNews}
-            forexNews={forexNews}
-            btcNews={btcNews}
-            tweets={tweets}
-            trumpAlerts={trumpAlerts}
-            lastNewsScan={lastNewsScan}
-            newsAlerts={newsAlerts}
-            toggleNewsAlerts={toggleNewsAlerts}
-            scanNews={scanNews}
-          />
-
-          {/* Subscription row */}
+          <div className={styles.iosHint}>iPhone: Safari → Share → Add to Home Screen</div>
           <div className={styles.settingRow} style={{ borderBottom: 'none', paddingTop: 14 }}>
             <div>
               <div className={styles.settingLabel}>Subscription</div>
@@ -378,7 +373,7 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ══════════ SCANNER TAB ══════════ */}
+      {/* SCANNER TAB */}
       {activeTab === 'Scanner' && (
         <div className={styles.tabContent}>
           {error && <div className={styles.errorBox}>⚠ {error}</div>}
@@ -387,7 +382,7 @@ export default function Dashboard({ session }) {
             <div className={styles.noScansCard}>
               <div className={styles.noScansIcon}>🔒</div>
               <div className={styles.noScansTitle}>No Scans Remaining</div>
-              <div className={styles.noScansText}>Upgrade to continue scanning markets</div>
+              <div className={styles.noScansText}>Upgrade to continue scanning markets with AI analysis</div>
               <button className={styles.noScansCta} onClick={() => setShowUpgrade(true)}>View Plans →</button>
             </div>
           )}
@@ -516,26 +511,26 @@ export default function Dashboard({ session }) {
             <div className={styles.emptyState}>
               <div className={styles.emptyOrb}>◎</div>
               <div className={styles.emptyTitle}>Ready to Scan</div>
-              <div className={styles.emptySubtitle}>Enter a symbol above and tap Scan</div>
+              <div className={styles.emptySubtitle}>Enter a symbol above and tap Scan to begin AI analysis</div>
             </div>
           )}
         </div>
       )}
 
-      {/* ══════════ MULTI-TF TAB ══════════ */}
+      {/* MULTI-TF TAB */}
       {activeTab === 'Multi-TF' && (
         <div className={styles.tabContent}>
           {!symbol.trim() ? (
             <div className={styles.emptyState}>
               <div className={styles.emptyOrb}>◎</div>
               <div className={styles.emptyTitle}>Enter a Symbol First</div>
-              <div className={styles.emptySubtitle}>Go to Scanner, enter a symbol, then come back</div>
+              <div className={styles.emptySubtitle}>Go to Scanner, enter a symbol, then come back here</div>
             </div>
           ) : htfLoading ? (
             <div className={styles.analyzingCard}>
               <div className={styles.analyzingOrb}><div className={styles.analyzingRing} /><div className={styles.analyzingCore}>◎</div></div>
               <div className={styles.analyzingTitle}>Multi-TF Scan</div>
-              <div className={styles.analyzingSubtitle}>Scanning 15min · 1h · 4h · 1day...</div>
+              <div className={styles.analyzingSubtitle}>Scanning 15min · 1h · 4h · 1day simultaneously...</div>
             </div>
           ) : htfResults.length > 0 ? (
             <div className={styles.mtfGrid}>
@@ -573,14 +568,13 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ══════════ WATCHLIST TAB ══════════ */}
+      {/* WATCHLIST TAB */}
       {activeTab === 'Watchlist' && (
         <div className={styles.tabContent}>
           <div className={styles.watchlistHeader}>
             <div className={styles.sectionCardLabel}>Your Watchlist</div>
             <button className={styles.scanBtn} onClick={scanWatchlist}
-              disabled={scanning || watchlist.length === 0}
-              style={{ padding: '6px 14px', fontSize: '0.78rem' }}>
+              disabled={scanning || watchlist.length === 0} style={{ padding: '6px 14px', fontSize: '0.78rem' }}>
               {scanning ? '⏳' : '▶ Scan All'}
             </button>
           </div>
@@ -611,16 +605,81 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ══════════ LEARN TAB ══════════ */}
+      {/* CHART SCANNER TAB */}
+      {activeTab === 'Chart' && (
+        <div className={styles.tabContent}>
+          <ChartScanner plan={plan} />
+        </div>
+      )}
+
+      {/* HISTORY TAB */}
+      {activeTab === 'History' && (
+        <div className={styles.tabContent}>
+          <div className={styles.watchlistHeader}>
+            <div className={styles.sectionCardLabel}>Recent Scans ({recentScans.length})</div>
+            {recentScans.length > 0 && (
+              <button
+                onClick={clearRecentScans}
+                style={{
+                  background: 'rgba(255,68,68,0.1)', border: '1px solid rgba(255,68,68,0.3)',
+                  color: '#ff4444', borderRadius: '8px', padding: '6px 12px',
+                  fontSize: '0.68rem', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace"
+                }}
+              >
+                🗑 Clear All
+              </button>
+            )}
+          </div>
+          {recentScans.length === 0 ? (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyOrb}>◎</div>
+              <div className={styles.emptyTitle}>No Recent Scans</div>
+              <div className={styles.emptySubtitle}>Your scan history will appear here</div>
+            </div>
+          ) : (
+            <div className={styles.watchlistGrid}>
+              {recentScans.map(scan => (
+                <div key={scan.id} className={styles.watchCard}>
+                  <div className={styles.watchCardTop}>
+                    <span className={styles.watchSymbol}>{scan.symbol}</span>
+                    <span className={styles.watchTf}>{scan.interval}</span>
+                    <span style={{
+                      fontSize: '0.68rem', fontWeight: 700,
+                      color: scan.direction === 'BUY' ? '#00e676' : scan.direction === 'SELL' ? '#ff4444' : '#888'
+                    }}>
+                      {scan.direction === 'BUY' ? '▲' : scan.direction === 'SELL' ? '▼' : '◆'} {scan.direction}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, fontSize: '0.65rem', color: '#5a6370', margin: '6px 0' }}>
+                    <span>E: <span style={{ color: '#00bcd4' }}>{scan.entryPrice}</span></span>
+                    <span>SL: <span style={{ color: '#ff4444' }}>{scan.stopLoss}</span></span>
+                    <span>T1: <span style={{ color: '#00e676' }}>{scan.takeProfit1}</span></span>
+                    <span style={{ marginLeft: 'auto', color: getMlColor(scan.mlScore) }}>ML {scan.mlScore}</span>
+                  </div>
+                  <div style={{ fontSize: '0.6rem', color: '#3a4050' }}>
+                    {new Date(scan.timestamp).toLocaleString()}
+                  </div>
+                  <button className={styles.watchScanBtn}
+                    onClick={() => { setSymbol(scan.symbol); setInterval(scan.interval); setActiveTab('Scanner'); analyzeSymbol(scan.symbol, scan.interval) }}>
+                    Rescan →
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* LEARN TAB */}
       {activeTab === 'Learn' && (
         <div className={styles.tabContent}>
           {[
-            { title: 'HTF Trend Filter', icon: '📈', text: 'Only trade in the direction of the higher timeframe trend. If the 4H shows a downtrend, only take SELL signals on the 15min.' },
-            { title: 'Mean Reversion Entry', icon: '🎯', text: 'Wait for price to pull back to the SMA 20. This gives you a low-risk entry with tight stop loss and high reward potential.' },
-            { title: 'RSI Zone Filter', icon: '📊', text: 'For BUY signals RSI should be 30-50. For SELL signals RSI 50-70. Avoid entries when RSI is above 70 or below 30.' },
-            { title: 'ATR-Based Risk', icon: '🛡️', text: 'Stop Loss at 1.5x ATR. Take Profit at 2x, 3.5x and 5x ATR. This adapts automatically to current market volatility.' },
-            { title: 'ML Score Guide', icon: '🤖', text: 'Above 70 = High probability. 50-70 = Moderate, use smaller size. Below 50 = Weak setup, wait for better conditions.' },
-            { title: 'Candle Confirmation', icon: '🕯️', text: 'Always wait for a candle pattern at your entry zone. A Bullish Engulfing or Pin Bar at SMA 20 support dramatically increases win rate.' },
+            { title: 'HTF Trend Filter', icon: '📈', text: 'Only trade in the direction of the higher timeframe trend. If the 4H shows a downtrend, only take SELL signals on the 15min. This alone eliminates the majority of losing trades.' },
+            { title: 'Mean Reversion Entry', icon: '🎯', text: 'Wait for price to pull back to the SMA 20 after a breakout. This gives you a low-risk entry at the mean with tight stop loss and high reward potential.' },
+            { title: 'RSI Zone Filter', icon: '📊', text: 'For BUY signals RSI should be 30-50. For SELL signals RSI between 50-70. Avoid entries at extremes above 70 or below 30.' },
+            { title: 'ATR-Based Risk', icon: '🛡️', text: 'Stop Loss at 1.5x ATR from entry. Take Profit at 2x, 3.5x and 5x ATR for 3 targets. This adapts to current market volatility automatically.' },
+            { title: 'ML Score Guide', icon: '🤖', text: 'Above 70 = High probability. 50-70 = Moderate — use smaller size. Below 50 = Weak setup — wait for better conditions.' },
+            { title: 'Candlestick Confirmation', icon: '🕯️', text: 'Always wait for candle pattern confirmation at your entry zone. A Bullish Engulfing or Pin Bar at SMA 20 support dramatically increases win probability.' },
           ].map(({ title, icon, text }) => (
             <div key={title} className={styles.learnCard}>
               <div className={styles.learnIcon}>{icon}</div>
