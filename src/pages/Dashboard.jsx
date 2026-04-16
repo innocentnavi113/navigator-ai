@@ -3,17 +3,11 @@ import { supabase } from '../supabase'
 import { useAlerts } from '../useAlerts'
 import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
-import styles from './Dashboard.module.css'
-import ChartScanner from './ChartScanner'
 import NewsPanel from '../components/NewsPanel'
-
+import styles from './Dashboard.module.css'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
 const POPULAR = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY', 'US30']
-const HTF_MAP = {
-  '1min': '15min', '5min': '1h', '15min': '4h', '30min': '4h',
-  '1h': '1day', '2h': '1day', '4h': '1week', '1day': '1month'
-}
 const SCAN_STEPS = [
   'Reading price axis',
   'Mapping market structure',
@@ -22,7 +16,7 @@ const SCAN_STEPS = [
   'Calculating indicators',
   'Generating signal',
 ]
-const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Chart', 'Learn']
+const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Learn']
 
 export default function Dashboard({ session }) {
   const [activeTab,     setActiveTab]     = useState('Scanner')
@@ -39,10 +33,29 @@ export default function Dashboard({ session }) {
   const [htfLoading,    setHtfLoading]    = useState(false)
   const scanTimer = useRef(null)
 
+  // ── ALL alerts destructured including news categories ──
   const {
-    alertsEnabled, permission, watchlist, minMlScore,
-    scanning, lastScan, toggleAlerts, addToWatchlist,
-    removeFromWatchlist, scanWatchlist, alertOnSignal, setMinMlScore
+    alertsEnabled,
+    permission,
+    watchlist,
+    minMlScore,
+    scanning,
+    lastScan,
+    newsAlerts,
+    latestNews,
+    forexNews,
+    btcNews,
+    tweets,
+    trumpAlerts,
+    lastNewsScan,
+    toggleAlerts,
+    toggleNewsAlerts,
+    addToWatchlist,
+    removeFromWatchlist,
+    scanWatchlist,
+    scanNews,
+    alertOnSignal,
+    setMinMlScore,
   } = useAlerts()
 
   const {
@@ -57,7 +70,8 @@ export default function Dashboard({ session }) {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeinstallprompt', e => {
-        e.preventDefault(); setInstallPrompt(e)
+        e.preventDefault()
+        setInstallPrompt(e)
       })
     }
   }, [])
@@ -144,11 +158,6 @@ export default function Dashboard({ session }) {
     )
   }
 
-  const {
-  // ...existing...
-  forexNews, btcNews, tweets, trumpAlerts,
- } = useAlerts()
-
   const isInWatchlist = watchlist.some(w => w.symbol === symbol.trim().toUpperCase())
   const isBuy  = result?.direction === 'BUY'
   const isSell = result?.direction === 'SELL'
@@ -202,10 +211,11 @@ export default function Dashboard({ session }) {
             {plan === 'premium' ? 'Premium' : plan === 'standard' ? 'Standard' : 'Free'}
           </button>
           <button
-            className={`${styles.iconBtn} ${alertsEnabled ? styles.iconBtnActive : ''}`}
-            onClick={() => setShowSettings(!showSettings)}
+            className={`${styles.iconBtn} ${showSettings ? styles.iconBtnActive : ''}`}
+            onClick={() => setShowSettings(prev => !prev)}
+            title="Alerts & News"
           >🔔</button>
-          <button className={styles.iconBtn} onClick={handleSignOut}>⏻</button>
+          <button className={styles.iconBtn} onClick={handleSignOut} title="Sign out">⏻</button>
         </div>
       </div>
 
@@ -218,9 +228,7 @@ export default function Dashboard({ session }) {
             </span>
             <span className={styles.scanCountSub}> · {plan} plan</span>
           </div>
-          <button className={styles.upgradeLink} onClick={() => setShowUpgrade(true)}>
-            Upgrade ↗
-          </button>
+          <button className={styles.upgradeLink} onClick={() => setShowUpgrade(true)}>Upgrade ↗</button>
         </div>
       )}
 
@@ -256,15 +264,10 @@ export default function Dashboard({ session }) {
               onKeyDown={e => e.key === 'Enter' && analyzeSymbol()}
             />
           </div>
-          <select
-            className={styles.tfSelect}
-            value={interval}
-            onChange={e => setInterval(e.target.value)}
-          >
+          <select className={styles.tfSelect} value={interval} onChange={e => setInterval(e.target.value)}>
             {INTERVALS.map(i => <option key={i} value={i}>{i}</option>)}
           </select>
         </div>
-
         <div className={styles.pairsRow}>
           {POPULAR.map(p => (
             <button
@@ -274,7 +277,6 @@ export default function Dashboard({ session }) {
             >{p}</button>
           ))}
         </div>
-
         <div className={styles.actionRow}>
           <div className={styles.strategistBadge}>
             <span className={styles.strategistDot} />
@@ -301,45 +303,64 @@ export default function Dashboard({ session }) {
         </div>
       </div>
 
-      {/* ── ALERT SETTINGS ── */}
+      {/* ── ALERT SETTINGS PANEL ── */}
       {showSettings && (
         <div className={styles.settingsPanel}>
           <div className={styles.settingsPanelHeader}>
-            <span>🔔 Alert Settings</span>
+            <span>🔔 Alerts & News</span>
             <button className={styles.closeBtn} onClick={() => setShowSettings(false)}>✕</button>
           </div>
+
+          {/* Push notifications toggle */}
           <div className={styles.settingRow}>
             <div>
               <div className={styles.settingLabel}>Push Notifications</div>
-              <div className={styles.settingDesc}>{permission === 'granted' ? '✓ Granted' : 'Click to enable'}</div>
+              <div className={styles.settingDesc}>
+                {permission === 'granted' ? '✓ Granted' :
+                 permission === 'denied'  ? '✗ Denied — check browser settings' :
+                 'Click to enable'}
+              </div>
             </div>
-            <button className={`${styles.toggleBtn} ${alertsEnabled ? styles.toggleBtnOn : ''}`} onClick={toggleAlerts}>
-              {alertsEnabled ? 'ON' : 'OFF'}
-            </button>
+            <button
+              className={`${styles.toggleBtn} ${alertsEnabled ? styles.toggleBtnOn : ''}`}
+              onClick={toggleAlerts}
+            >{alertsEnabled ? 'ON' : 'OFF'}</button>
           </div>
+
+          {/* Min ML score */}
           <div className={styles.settingRow}>
             <div>
               <div className={styles.settingLabel}>Min ML Score: {minMlScore}</div>
               <div className={styles.settingDesc}>Only alert above this score</div>
             </div>
-            <input type="range" min="40" max="90" value={minMlScore}
-              onChange={e => setMinMlScore(Number(e.target.value))} style={{ width: 80 }} />
+            <input
+              type="range" min="40" max="90" value={minMlScore}
+              onChange={e => setMinMlScore(Number(e.target.value))}
+              style={{ width: 80 }}
+            />
           </div>
-          {installPrompt && (
+
+          {/* iOS install hint */}
+          {installPrompt ? (
             <button className={styles.installBtn} onClick={handleInstall}>📲 Install App to Home Screen</button>
+          ) : (
+            <div className={styles.iosHint}>📱 iPhone: Safari → Share → Add to Home Screen</div>
           )}
-          <div className={styles.iosHint}>iPhone: Safari → Share → Add to Home Screen</div>
+
+          {/* ── NEWS PANEL — receives ALL news categories ── */}
           <NewsPanel
             latestNews={latestNews}
             forexNews={forexNews}
-           btcNews={btcNews}
-           tweets={tweets}
-           trumpAlerts={trumpAlerts}
-           lastNewsScan={lastNewsScan}
-           newsAlerts={newsAlerts}
-           toggleNewsAlerts={toggleNewsAlerts}
-           scanNews={scanNews}
- />
+            btcNews={btcNews}
+            tweets={tweets}
+            trumpAlerts={trumpAlerts}
+            lastNewsScan={lastNewsScan}
+            newsAlerts={newsAlerts}
+            toggleNewsAlerts={toggleNewsAlerts}
+            scanNews={scanNews}
+          />
+
+          {/* Subscription row */}
           <div className={styles.settingRow} style={{ borderBottom: 'none', paddingTop: 14 }}>
             <div>
               <div className={styles.settingLabel}>Subscription</div>
@@ -366,7 +387,7 @@ export default function Dashboard({ session }) {
             <div className={styles.noScansCard}>
               <div className={styles.noScansIcon}>🔒</div>
               <div className={styles.noScansTitle}>No Scans Remaining</div>
-              <div className={styles.noScansText}>Upgrade to continue scanning markets with AI analysis</div>
+              <div className={styles.noScansText}>Upgrade to continue scanning markets</div>
               <button className={styles.noScansCta} onClick={() => setShowUpgrade(true)}>View Plans →</button>
             </div>
           )}
@@ -495,7 +516,7 @@ export default function Dashboard({ session }) {
             <div className={styles.emptyState}>
               <div className={styles.emptyOrb}>◎</div>
               <div className={styles.emptyTitle}>Ready to Scan</div>
-              <div className={styles.emptySubtitle}>Enter a symbol above and tap Scan to begin AI analysis</div>
+              <div className={styles.emptySubtitle}>Enter a symbol above and tap Scan</div>
             </div>
           )}
         </div>
@@ -508,13 +529,13 @@ export default function Dashboard({ session }) {
             <div className={styles.emptyState}>
               <div className={styles.emptyOrb}>◎</div>
               <div className={styles.emptyTitle}>Enter a Symbol First</div>
-              <div className={styles.emptySubtitle}>Go to Scanner, enter a symbol, then come back here</div>
+              <div className={styles.emptySubtitle}>Go to Scanner, enter a symbol, then come back</div>
             </div>
           ) : htfLoading ? (
             <div className={styles.analyzingCard}>
               <div className={styles.analyzingOrb}><div className={styles.analyzingRing} /><div className={styles.analyzingCore}>◎</div></div>
               <div className={styles.analyzingTitle}>Multi-TF Scan</div>
-              <div className={styles.analyzingSubtitle}>Scanning 15min · 1h · 4h · 1day simultaneously...</div>
+              <div className={styles.analyzingSubtitle}>Scanning 15min · 1h · 4h · 1day...</div>
             </div>
           ) : htfResults.length > 0 ? (
             <div className={styles.mtfGrid}>
@@ -558,7 +579,8 @@ export default function Dashboard({ session }) {
           <div className={styles.watchlistHeader}>
             <div className={styles.sectionCardLabel}>Your Watchlist</div>
             <button className={styles.scanBtn} onClick={scanWatchlist}
-              disabled={scanning || watchlist.length === 0} style={{ padding: '6px 14px', fontSize: '0.78rem' }}>
+              disabled={scanning || watchlist.length === 0}
+              style={{ padding: '6px 14px', fontSize: '0.78rem' }}>
               {scanning ? '⏳' : '▶ Scan All'}
             </button>
           </div>
@@ -589,23 +611,16 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* CHART SCANNER TAB */}
-      {activeTab === 'Chart' && (
-       <div className={styles.tabContent}>
-         <ChartScanner plan={plan} />
-       </div>
-     )}
-
       {/* ══════════ LEARN TAB ══════════ */}
       {activeTab === 'Learn' && (
         <div className={styles.tabContent}>
           {[
-            { title: 'HTF Trend Filter', icon: '📈', text: 'Only trade in the direction of the higher timeframe trend. If the 4H shows a downtrend, only take SELL signals on the 15min. This alone eliminates the majority of losing trades.' },
-            { title: 'Mean Reversion Entry', icon: '🎯', text: 'Wait for price to pull back to the SMA 20 after a breakout. This gives you a low-risk entry at the mean with tight stop loss and high reward potential.' },
-            { title: 'RSI Zone Filter', icon: '📊', text: 'For BUY signals RSI should be 30-50. For SELL signals RSI between 50-70. Avoid entries at extremes above 70 or below 30.' },
-            { title: 'ATR-Based Risk', icon: '🛡️', text: 'Stop Loss at 1.5x ATR from entry. Take Profit at 2x, 3.5x and 5x ATR for 3 targets. This adapts to current market volatility automatically.' },
-            { title: 'ML Score Guide', icon: '🤖', text: 'Above 70 = High probability. 50-70 = Moderate — use smaller size. Below 50 = Weak setup — wait for better conditions.' },
-            { title: 'Candlestick Confirmation', icon: '🕯️', text: 'Always wait for candle pattern confirmation at your entry zone. A Bullish Engulfing or Pin Bar at SMA 20 support dramatically increases win probability.' },
+            { title: 'HTF Trend Filter', icon: '📈', text: 'Only trade in the direction of the higher timeframe trend. If the 4H shows a downtrend, only take SELL signals on the 15min.' },
+            { title: 'Mean Reversion Entry', icon: '🎯', text: 'Wait for price to pull back to the SMA 20. This gives you a low-risk entry with tight stop loss and high reward potential.' },
+            { title: 'RSI Zone Filter', icon: '📊', text: 'For BUY signals RSI should be 30-50. For SELL signals RSI 50-70. Avoid entries when RSI is above 70 or below 30.' },
+            { title: 'ATR-Based Risk', icon: '🛡️', text: 'Stop Loss at 1.5x ATR. Take Profit at 2x, 3.5x and 5x ATR. This adapts automatically to current market volatility.' },
+            { title: 'ML Score Guide', icon: '🤖', text: 'Above 70 = High probability. 50-70 = Moderate, use smaller size. Below 50 = Weak setup, wait for better conditions.' },
+            { title: 'Candle Confirmation', icon: '🕯️', text: 'Always wait for a candle pattern at your entry zone. A Bullish Engulfing or Pin Bar at SMA 20 support dramatically increases win rate.' },
           ].map(({ title, icon, text }) => (
             <div key={title} className={styles.learnCard}>
               <div className={styles.learnIcon}>{icon}</div>
