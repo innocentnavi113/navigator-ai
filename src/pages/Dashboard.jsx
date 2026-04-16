@@ -145,10 +145,9 @@ export default function Dashboard({ session }) {
   }
 
   const {
-  // ...existing ones...
-  newsAlerts, latestNews, lastNewsScan,
-  toggleNewsAlerts, scanNews,
-} = useAlerts() 
+  // ...existing...
+  forexNews, btcNews, tweets, trumpAlerts,
+ } = useAlerts()
 
   const isInWatchlist = watchlist.some(w => w.symbol === symbol.trim().toUpperCase())
   const isBuy  = result?.direction === 'BUY'
@@ -331,13 +330,16 @@ export default function Dashboard({ session }) {
           )}
           <div className={styles.iosHint}>iPhone: Safari → Share → Add to Home Screen</div>
           <NewsPanel
-           latestNews={latestNews}
+            latestNews={latestNews}
+            forexNews={forexNews}
+           btcNews={btcNews}
+           tweets={tweets}
+           trumpAlerts={trumpAlerts}
            lastNewsScan={lastNewsScan}
            newsAlerts={newsAlerts}
            toggleNewsAlerts={toggleNewsAlerts}
-           scanNews={scanNews} 
-          
-/>
+           scanNews={scanNews}
+ />
           <div className={styles.settingRow} style={{ borderBottom: 'none', paddingTop: 14 }}>
             <div>
               <div className={styles.settingLabel}>Subscription</div>

@@ -1,7 +1,21 @@
 // src/components/NewsPanel.jsx
+import { useState } from 'react'
 import styles from './NewsPanel.module.css'
 
-export default function NewsPanel({ latestNews, lastNewsScan, newsAlerts, toggleNewsAlerts, scanNews }) {
+const NEWS_TABS = ['All', 'Forex', 'BTC', 'Tweets', 'Trump']
+
+export default function NewsPanel({
+  latestNews = [],
+  forexNews  = [],
+  btcNews    = [],
+  tweets     = [],
+  trumpAlerts = [],
+  lastNewsScan,
+  newsAlerts,
+  toggleNewsAlerts,
+  scanNews,
+}) {
+  const [activeTab, setActiveTab] = useState('All')
 
   function timeAgo(dateStr) {
     if (!dateStr) return ''
@@ -16,6 +30,9 @@ export default function NewsPanel({ latestNews, lastNewsScan, newsAlerts, toggle
 
   function getImpactColor(article) {
     if (article.isTrump)     return '#ff6b35'
+    if (article.isTweet)     return '#1d9bf0'
+    if (article.isForex)     return '#00bcd4'
+    if (article.isBTC)       return '#f7931a'
     if (article.score >= 20) return '#ff4444'
     if (article.score >= 12) return '#ffd600'
     return '#5a6370'
@@ -23,10 +40,32 @@ export default function NewsPanel({ latestNews, lastNewsScan, newsAlerts, toggle
 
   function getImpactLabel(article) {
     if (article.isTrump)     return '🚨 TRUMP'
+    if (article.isTweet)     return `🐦 ${article.source}`
+    if (article.isForex && article.score >= 15) return '💱 FOREX'
+    if (article.isBTC   && article.score >= 15) return '₿ BTC'
     if (article.score >= 20) return '⚡ HIGH'
     if (article.score >= 12) return '⚠ MEDIUM'
     return '📰 NEWS'
   }
+
+  function getTabCount(tab) {
+    if (tab === 'All')   return latestNews.length
+    if (tab === 'Forex') return forexNews.length
+    if (tab === 'BTC')   return btcNews.length
+    if (tab === 'Tweets')return tweets.length
+    if (tab === 'Trump') return trumpAlerts.length
+    return 0
+  }
+
+  function getActiveArticles() {
+    if (activeTab === 'Forex')  return forexNews
+    if (activeTab === 'BTC')    return btcNews
+    if (activeTab === 'Tweets') return tweets
+    if (activeTab === 'Trump')  return trumpAlerts
+    return latestNews
+  }
+
+  const articles = getActiveArticles()
 
   return (
     <div className={styles.panel}>
@@ -34,14 +73,14 @@ export default function NewsPanel({ latestNews, lastNewsScan, newsAlerts, toggle
       {/* Header */}
       <div className={styles.header}>
         <div>
-          <div className={styles.title}>📰 News Alerts</div>
+          <div className={styles.title}>📰 News & Tweets</div>
           <div className={styles.sub}>
-            {lastNewsScan ? `Last scan: ${timeAgo(lastNewsScan)}` : 'Not scanned yet'}
-            {latestNews.length > 0 && ` · ${latestNews.length} articles`}
+            {lastNewsScan ? `Last: ${timeAgo(lastNewsScan)}` : 'Not scanned'}
+            {latestNews.length > 0 && ` · ${latestNews.length} total`}
           </div>
         </div>
         <div className={styles.headerRight}>
-          <button className={styles.scanNowBtn} onClick={scanNews}>↻ Scan</button>
+          <button className={styles.scanNowBtn} onClick={scanNews}>↻</button>
           <button
             className={`${styles.toggleBtn} ${newsAlerts ? styles.toggleBtnOn : ''}`}
             onClick={toggleNewsAlerts}
@@ -49,33 +88,62 @@ export default function NewsPanel({ latestNews, lastNewsScan, newsAlerts, toggle
         </div>
       </div>
 
-      {/* Trigger chips */}
-      <div className={styles.triggers}>
-        <div className={styles.triggerChip} style={{ borderColor: '#ff6b35', color: '#ff6b35', background: 'rgba(255,107,53,0.08)' }}>🚨 Trump</div>
-        <div className={styles.triggerChip} style={{ borderColor: '#ff4444', color: '#ff4444', background: 'rgba(255,68,68,0.08)' }}>⚡ Rates</div>
-        <div className={styles.triggerChip} style={{ borderColor: '#ffd600', color: '#ffd600', background: 'rgba(255,214,0,0.08)' }}>⚠ NFP/CPI</div>
-        <div className={styles.triggerChip} style={{ borderColor: '#00bcd4', color: '#00bcd4', background: 'rgba(0,188,212,0.08)' }}>📊 Volatility</div>
+      {/* Tabs */}
+      <div className={styles.tabs}>
+        {NEWS_TABS.map(tab => (
+          <button
+            key={tab}
+            className={`${styles.tabBtn} ${activeTab === tab ? styles.tabBtnActive : ''}`}
+            onClick={() => setActiveTab(tab)}
+            style={activeTab === tab ? {
+              borderColor: tab === 'Trump' ? '#ff6b35' :
+                           tab === 'Tweets' ? '#1d9bf0' :
+                           tab === 'Forex' ? '#00bcd4' :
+                           tab === 'BTC' ? '#f7931a' : '#00e676',
+              color: tab === 'Trump' ? '#ff6b35' :
+                     tab === 'Tweets' ? '#1d9bf0' :
+                     tab === 'Forex' ? '#00bcd4' :
+                     tab === 'BTC' ? '#f7931a' : '#00e676',
+            } : {}}
+          >
+            {tab === 'Trump'  ? '🚨' :
+             tab === 'Tweets' ? '🐦' :
+             tab === 'Forex'  ? '💱' :
+             tab === 'BTC'    ? '₿' : '📰'} {tab}
+            {getTabCount(tab) > 0 && (
+              <span className={styles.tabCount}>{getTabCount(tab)}</span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {/* News feed */}
-      {latestNews.length > 0 ? (
+      {/* Feed */}
+      {articles.length > 0 ? (
         <div className={styles.feed}>
-          <div className={styles.feedLabel}>LATEST — {latestNews.length} ARTICLES</div>
-          {latestNews.map((article, i) => (
+          {articles.map((article, i) => (
             <a
               key={i}
               href={article.link || '#'}
               target="_blank"
               rel="noreferrer"
-              className={styles.newsItem}
+              className={`${styles.newsItem} ${article.isTweet ? styles.tweetItem : ''}`}
               style={{ borderLeftColor: getImpactColor(article) }}
             >
               <div className={styles.newsLeft}>
                 <div className={styles.newsTopRow}>
-                  <span className={styles.impactBadge} style={{ color: getImpactColor(article), borderColor: getImpactColor(article) + '55' }}>
+                  <span
+                    className={styles.impactBadge}
+                    style={{
+                      color: getImpactColor(article),
+                      borderColor: getImpactColor(article) + '55',
+                      background: getImpactColor(article) + '15',
+                    }}
+                  >
                     {getImpactLabel(article)}
                   </span>
-                  <span className={styles.newsSource}>{article.source}</span>
+                  <span className={styles.newsSource}>
+                    {article.isTweet ? article.tweetUser || article.source : article.source}
+                  </span>
                   <span className={styles.newsAge}>{timeAgo(article.pubDate)}</span>
                 </div>
                 <div className={styles.newsTitle}>{article.title}</div>
@@ -93,9 +161,27 @@ export default function NewsPanel({ latestNews, lastNewsScan, newsAlerts, toggle
         </div>
       ) : (
         <div className={styles.emptyFeed}>
-          <div className={styles.emptyIcon}>📡</div>
-          <div className={styles.emptyText}>Tap ↻ Scan to load latest market news</div>
-          <div className={styles.emptyHint}>Reuters · MarketWatch · BBC · Yahoo Finance</div>
+          <div className={styles.emptyIcon}>
+            {activeTab === 'Tweets' ? '🐦' :
+             activeTab === 'Forex'  ? '💱' :
+             activeTab === 'BTC'    ? '₿'  : '📡'}
+          </div>
+          <div className={styles.emptyText}>
+            {activeTab === 'Tweets'
+              ? 'No tweets yet — tap ↻ to scan trader accounts'
+              : activeTab === 'Forex'
+              ? 'No forex news yet — tap ↻ to scan'
+              : activeTab === 'BTC'
+              ? 'No BTC news yet — tap ↻ to scan'
+              : activeTab === 'Trump'
+              ? 'No Trump news right now'
+              : 'Tap ↻ to load latest market news'}
+          </div>
+          <div className={styles.emptyHint}>
+            {activeTab === 'Tweets'
+              ? 'Monitors: Kathy Lien · Peter Brandt · Saylor · Pompliano'
+              : 'CoinDesk · CoinTelegraph · ForexLive · FXStreet · Reddit'}
+          </div>
         </div>
       )}
     </div>
