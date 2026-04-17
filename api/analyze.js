@@ -15,26 +15,64 @@ export default async function handler(req, res) {
   // ── MODE 1: Chart image analysis ─────────────────────────────────────
   if (imageBase64 && imageType) {
     try {
-      const prompt = customPrompt || `Analyze this trading chart. You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
+      const prompt = customPrompt || `You are an elite institutional trading analyst specializing in Smart Money Concepts (SMC) and Classical Technical Analysis. Analyze this trading chart screenshot with maximum precision.
+
+You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON starting with { and ending with }.
+
+Analyze using BOTH SMC and Classical TA frameworks:
+
+SMC Framework — identify:
+- Order Blocks (OB): Last bullish/bearish candle before a strong move
+- Fair Value Gaps (FVG): 3-candle imbalance zones
+- Break of Structure (BOS): Higher high/lower low confirmation
+- Change of Character (CHoCH): First sign of trend reversal
+- Liquidity sweeps: Equal highs/lows that got swept
+- Premium/Discount zones: Above/below 50% of the range
+- Inducement levels: Obvious levels set to trap retail
+
+Classical TA Framework — identify:
+- Candlestick patterns: Engulfing, Pin Bar, Doji, Hammer, Shooting Star, Marubozu, Inside Bar, Morning/Evening Star, Harami
+- Chart patterns: Head & Shoulders, Double Top/Bottom, Triangle, Wedge, Flag, Cup & Handle
+- Key S/R levels from swing highs/lows
+- Moving average positions if visible
+- RSI/MACD divergence if visible
+- Trend lines and channels
 
 {
-  "pair": "READ the exact instrument name from the chart label or title visible in the image. Do not guess.",
+  "pair": "READ exact instrument name from chart label. Do not guess.",
   "timeframe": "detected timeframe e.g. H1",
-  "direction": "BUY or SELL",
+  "direction": "BUY or SELL or NO SIGNAL",
   "sentiment": "Bullish or Bearish or Neutral or Strongly Bullish or Strongly Bearish",
-  "sentimentScore": 50,
-  "entryPrice": "price level",
-  "stopLoss": "price level",
-  "takeProfit1": "price level",
-  "takeProfit2": "price level",
-  "takeProfit3": "price level",
-  "riskReward": "1:2",
-  "priceAction": "2-3 sentences on candlestick patterns and trend",
-  "supportResistance": "2-3 sentences on key S/R levels",
-  "technicalIndicators": "2-3 sentences on visible indicators",
-  "marketSentiment": "2-3 sentences on overall market sentiment",
-  "summary": "3-4 sentences comprehensive recommendation",
-  "tags": ["tag1", "tag2", "tag3"]
+  "sentimentScore": 75,
+  "entryPrice": "exact price level from chart",
+  "stopLoss": "exact price level - place below OB or swing low for BUY, above OB or swing high for SELL",
+  "takeProfit1": "first target - nearest liquidity or FVG fill",
+  "takeProfit2": "second target - next significant level",
+  "takeProfit3": "third target - major structural level",
+  "riskReward": "e.g. 1:2.5",
+  "smcAnalysis": {
+    "orderBlock": "describe the key order block level and direction",
+    "fvg": "describe any fair value gap present",
+    "bos": "describe last break of structure",
+    "choch": "describe change of character if present or none",
+    "liquiditySweep": "describe any liquidity sweep visible",
+    "premiumDiscount": "is price in premium or discount zone",
+    "inducement": "any inducement levels visible"
+  },
+  "classicalAnalysis": {
+    "candlePattern": "specific candlestick pattern detected",
+    "chartPattern": "chart pattern if any e.g. Double Bottom or none",
+    "trendStructure": "describe the trend structure",
+    "keyLevels": "describe key S/R levels",
+    "indicators": "describe any visible indicators"
+  },
+  "confluenceFactors": ["factor1", "factor2", "factor3"],
+  "priceAction": "2-3 sentences combining SMC and classical price action",
+  "supportResistance": "2-3 sentences on key levels from both frameworks",
+  "technicalIndicators": "2-3 sentences on visible indicators and SMC zones",
+  "marketSentiment": "2-3 sentences on overall bias from both SMC and classical",
+  "summary": "3-4 sentences comprehensive recommendation combining both frameworks",
+  "tags": ["tag1", "tag2", "tag3", "tag4"]
 }`
 
       const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -46,8 +84,8 @@ export default async function handler(req, res) {
           'X-Title': 'Navigator AI'
         },
         body: JSON.stringify({
-          model: 'meta-llama/llama-4-maverick:free',
-          max_tokens: 1000,
+          model: 'google/gemini-2.0-flash-001',
+          max_tokens: 1500,
           messages: [{
             role: 'user',
             content: [
@@ -107,6 +145,7 @@ export default async function handler(req, res) {
 
     if (!ltf || !htf) return res.status(500).json({ error: 'Not enough candle data' })
 
+    // ── Classical TA signals ──
     const htfBullish = htf.latestClose > htf.sma50 && htf.sma20 > htf.sma50
     const htfBearish = htf.latestClose < htf.sma50 && htf.sma20 < htf.sma50
     const htfTrend   = htfBullish ? 'BULLISH' : htfBearish ? 'BEARISH' : 'NEUTRAL'
@@ -119,28 +158,46 @@ export default async function handler(req, res) {
     const rsiExtremeBuy  = ltf.rsi < 35
     const rsiExtremeSell = ltf.rsi > 65
 
+    // ── SMC signals ──
+    const smc = calcSMC(ltfData.candles)
+
     let pullbackScore = 0
     if (htfBullish) {
-      if (ltfBelowSMA20 || ltfNearSMA20) pullbackScore += 30
-      if (rsiBuyZone || rsiExtremeBuy)   pullbackScore += 25
-      if (ltf.sma8 > ltf.sma20)         pullbackScore += 15
-      if (ltf.pattern.includes('Bull') || ltf.pattern.includes('Pin')) pullbackScore += 20
+      if (ltfBelowSMA20 || ltfNearSMA20) pullbackScore += 25
+      if (rsiBuyZone || rsiExtremeBuy)   pullbackScore += 20
+      if (ltf.sma8 > ltf.sma20)         pullbackScore += 10
+      if (ltf.pattern.includes('Bull') || ltf.pattern.includes('Pin')) pullbackScore += 15
       if (ltf.sr.supports.length > 0)   pullbackScore += 10
+      // SMC boosts
+      if (smc.bullishOB)                pullbackScore += 15
+      if (smc.fvg === 'BULLISH')        pullbackScore += 10
+      if (smc.bos === 'BULLISH')        pullbackScore += 10
+      if (smc.discount)                 pullbackScore += 5
     }
     if (htfBearish) {
-      if (ltfAboveSMA20 || ltfNearSMA20) pullbackScore += 30
-      if (rsiSellZone || rsiExtremeSell) pullbackScore += 25
-      if (ltf.sma8 < ltf.sma20)         pullbackScore += 15
-      if (ltf.pattern.includes('Bear') || ltf.pattern.includes('Shooting')) pullbackScore += 20
+      if (ltfAboveSMA20 || ltfNearSMA20) pullbackScore += 25
+      if (rsiSellZone || rsiExtremeSell) pullbackScore += 20
+      if (ltf.sma8 < ltf.sma20)         pullbackScore += 10
+      if (ltf.pattern.includes('Bear') || ltf.pattern.includes('Shooting')) pullbackScore += 15
       if (ltf.sr.resistances.length > 0) pullbackScore += 10
+      // SMC boosts
+      if (smc.bearishOB)                pullbackScore += 15
+      if (smc.fvg === 'BEARISH')        pullbackScore += 10
+      if (smc.bos === 'BEARISH')        pullbackScore += 10
+      if (smc.premium)                  pullbackScore += 5
     }
 
     let mlScore = 0
-    if (htfBullish || htfBearish) mlScore += 40
+    if (htfBullish || htfBearish) mlScore += 30
     mlScore += Math.round(pullbackScore * 0.3)
-    if ((htfBullish && rsiBuyZone)  || (htfBearish && rsiSellZone))     mlScore += 15
-    if ((htfBullish && rsiExtremeBuy) || (htfBearish && rsiExtremeSell)) mlScore += 10
-    if (ltf.pattern !== 'No clear pattern') mlScore += 15
+    if ((htfBullish && rsiBuyZone)  || (htfBearish && rsiSellZone))     mlScore += 10
+    if ((htfBullish && rsiExtremeBuy) || (htfBearish && rsiExtremeSell)) mlScore += 8
+    if (ltf.pattern !== 'No clear pattern') mlScore += 12
+    // SMC scoring
+    if (smc.bullishOB || smc.bearishOB) mlScore += 12
+    if (smc.fvg !== 'NONE')             mlScore += 8
+    if (smc.bos !== 'NONE')             mlScore += 8
+    if (smc.choch !== 'NONE')           mlScore += 7
     mlScore = Math.min(100, mlScore)
 
     let direction = 'NO SIGNAL'
@@ -150,12 +207,25 @@ export default async function handler(req, res) {
     const dp    = ltf.latestClose < 10 ? 5 : ltf.latestClose < 1000 ? 4 : 2
     const atr   = ltf.atr
     const price = ltf.latestClose
-    const buySL   = (price - atr * 1.5).toFixed(dp)
-    const buyTP1  = (price + atr * 2.0).toFixed(dp)
+
+    // SMC-aware stop loss — use OB level if available, else ATR
+    let buySL, sellSL
+    if (smc.bullishOBLevel && direction === 'BUY') {
+      buySL = (smc.bullishOBLevel - atr * 0.5).toFixed(dp)
+    } else {
+      buySL = (price - atr * 1.5).toFixed(dp)
+    }
+    if (smc.bearishOBLevel && direction === 'SELL') {
+      sellSL = (smc.bearishOBLevel + atr * 0.5).toFixed(dp)
+    } else {
+      sellSL = (price + atr * 1.5).toFixed(dp)
+    }
+
+    // TP targets — use FVG/liquidity levels if available, else ATR
+    const buyTP1  = smc.fvgHigh ? smc.fvgHigh.toFixed(dp) : (price + atr * 2.0).toFixed(dp)
     const buyTP2  = (price + atr * 3.5).toFixed(dp)
     const buyTP3  = (price + atr * 5.0).toFixed(dp)
-    const sellSL  = (price + atr * 1.5).toFixed(dp)
-    const sellTP1 = (price - atr * 2.0).toFixed(dp)
+    const sellTP1 = smc.fvgLow ? smc.fvgLow.toFixed(dp) : (price - atr * 2.0).toFixed(dp)
     const sellTP2 = (price - atr * 3.5).toFixed(dp)
     const sellTP3 = (price - atr * 5.0).toFixed(dp)
 
@@ -168,20 +238,22 @@ export default async function handler(req, res) {
 SYMBOL: ${cleanSymbol} | LTF: ${interval} | HTF: ${htfInterval}
 HTF: Close=${htf.latestClose} SMA20=${htf.sma20?.toFixed(dp)} SMA50=${htf.sma50?.toFixed(dp)} TREND=${htfTrend}
 LTF: Close=${price} SMA8=${ltf.sma8?.toFixed(dp)} SMA20=${ltf.sma20?.toFixed(dp)} SMA50=${ltf.sma50?.toFixed(dp)} RSI=${ltf.rsi?.toFixed(1)} ATR=${atr?.toFixed(dp)}
-PATTERN: ${ltf.pattern}
+CLASSICAL PATTERN: ${ltf.pattern}
 SUPPORT: ${ltf.sr.supports.map(s=>s.toFixed(dp)).join(',')||'none'}
 RESISTANCE: ${ltf.sr.resistances.map(r=>r.toFixed(dp)).join(',')||'none'}
+SMC: BullishOB=${smc.bullishOB ? smc.bullishOBLevel?.toFixed(dp) : 'none'} | BearishOB=${smc.bearishOB ? smc.bearishOBLevel?.toFixed(dp) : 'none'}
+SMC: FVG=${smc.fvg} | BOS=${smc.bos} | CHoCH=${smc.choch} | Premium=${smc.premium} | Discount=${smc.discount}
 SIGNAL: ${direction} | ML=${mlScore} | PULLBACK=${pullbackScore}
 ${direction==='BUY' ?`BUY:  Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
 ${direction==='SELL'?`SELL: Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
 `
 
-    const aiPrompt = `You are NAVIGATOR AI trading analyst. Use ONLY this real data:
+    const aiPrompt = `You are NAVIGATOR AI — an elite trading analyst combining Smart Money Concepts (SMC) and Classical Technical Analysis. Use ONLY this real market data:
 ${summary}
 
-Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markdown.
+Reply with ONLY this JSON. Keep ALL string values SHORT (max 100 chars). No markdown.
 
-{"pair":"${cleanSymbol}","timeframe":"${interval}","htfTimeframe":"${htfInterval}","currentPrice":"${price}","direction":"${direction}","setupName":"brief setup name","mlScore":${mlScore},"pullbackScore":${pullbackScore},"htfTrend":"${htfTrend}","htfAnalysis":"1 short sentence on HTF trend","trendDirection":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","trendStrength":"${mlScore>=70?'STRONG':mlScore>=50?'MODERATE':'WEAK'}","meanReversionZone":"brief description","rsiReading":"RSI ${ltf.rsi?.toFixed(1)} status","candlePattern":"${ltf.pattern}","entryPrice":"${price}","stopLoss":"${sl}","takeProfit1":"${tp1}","takeProfit2":"${tp2}","takeProfit3":"${tp3}","riskReward":"1:3.3","sentiment":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","sentimentScore":${mlScore},"priceAction":"1-2 sentences on candle and pullback","supportResistance":"1-2 sentences on S/R levels","technicalIndicators":"1-2 sentences on SMA RSI ATR","marketSentiment":"1-2 sentences on MTF confluence","summary":"2-3 sentences on trade setup","tags":["${htfTrend}","${ltf.pattern.split(' ')[0]}","${direction==='NO SIGNAL'?'Waiting':direction}"]}`
+{"pair":"${cleanSymbol}","timeframe":"${interval}","htfTimeframe":"${htfInterval}","currentPrice":"${price}","direction":"${direction}","setupName":"brief SMC+Classical setup name","mlScore":${mlScore},"pullbackScore":${pullbackScore},"htfTrend":"${htfTrend}","htfAnalysis":"1 sentence on HTF trend and SMC structure","trendDirection":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","trendStrength":"${mlScore>=70?'STRONG':mlScore>=50?'MODERATE':'WEAK'}","meanReversionZone":"SMA20 + OB zone description","rsiReading":"RSI ${ltf.rsi?.toFixed(1)} status","candlePattern":"${ltf.pattern}","smcOrderBlock":"${smc.bullishOB ? 'Bullish OB at '+smc.bullishOBLevel?.toFixed(dp) : smc.bearishOB ? 'Bearish OB at '+smc.bearishOBLevel?.toFixed(dp) : 'None detected'}","smcFVG":"${smc.fvg} FVG","smcBOS":"${smc.bos} BOS","smcCHoCH":"${smc.choch}","smcZone":"${smc.premium ? 'Premium - sell zone' : smc.discount ? 'Discount - buy zone' : 'Equilibrium'}","entryPrice":"${price}","stopLoss":"${sl}","takeProfit1":"${tp1}","takeProfit2":"${tp2}","takeProfit3":"${tp3}","riskReward":"1:3.3","sentiment":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","sentimentScore":${mlScore},"priceAction":"1-2 sentences on candle pattern and SMC context","supportResistance":"1-2 sentences on S/R and order block levels","technicalIndicators":"1-2 sentences on SMA RSI ATR and SMC zones","marketSentiment":"1-2 sentences on MTF confluence with SMC bias","summary":"2-3 sentences combining SMC and classical analysis for the trade","tags":["${htfTrend}","${ltf.pattern.split(' ')[0]}","${smc.bos!=='NONE'?smc.bos+' BOS':'No BOS'}","${direction==='NO SIGNAL'?'Waiting':direction}"]}`
 
     const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -192,7 +264,7 @@ Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markd
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'openrouter/auto',
+        model: 'google/gemini-2.0-flash-001',
         max_tokens: 1000,
         messages: [{ role: 'user', content: aiPrompt }]
       })
@@ -213,7 +285,7 @@ Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markd
     let result
     try { result = JSON.parse(jsonStr) }
     catch (e) {
-      result = buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp })
+      result = buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc })
     }
 
     return res.status(200).json({ result })
@@ -303,6 +375,7 @@ function calcIndicators(candles) {
   function detectPattern(candles) {
     const last = candles[candles.length - 1]
     const prev = candles[candles.length - 2]
+    const prev2 = candles[candles.length - 3]
     if (!last || !prev) return 'None detected'
     const body  = Math.abs(last.close - last.open)
     const range = last.high - last.low
@@ -315,6 +388,9 @@ function calcIndicators(candles) {
     if (body < range * 0.1) return 'Doji'
     if (body > range * 0.9) return last.close > last.open ? 'Bullish Marubozu' : 'Bearish Marubozu'
     if (last.high < prev.high && last.low > prev.low) return 'Inside Bar'
+    if (prev2 && prev.close < prev.open && last.close > last.open && prev2.close > prev2.open) return 'Morning Star'
+    if (prev2 && prev.close > prev.open && last.close < last.open && prev2.close < prev2.open) return 'Evening Star'
+    if (lower > body * 1.5 && upper < body * 0.5) return 'Hammer'
     return 'No clear pattern'
   }
 
@@ -335,11 +411,80 @@ function calcIndicators(candles) {
   }
 }
 
-function buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp }) {
+// ── SMC Calculation ──────────────────────────────────────────────────────────
+function calcSMC(candles) {
+  if (!candles || candles.length < 20) return { bullishOB: false, bearishOB: false, fvg: 'NONE', bos: 'NONE', choch: 'NONE', premium: false, discount: false }
+
+  const n = candles.length
+  const price = candles[n - 1].close
+
+  // Order Block detection — last bearish candle before bullish impulse (bullish OB)
+  // last bullish candle before bearish impulse (bearish OB)
+  let bullishOB = false, bullishOBLevel = null
+  let bearishOB = false, bearishOBLevel = null
+
+  for (let i = n - 10; i < n - 2; i++) {
+    const c = candles[i]
+    const next = candles[i + 1]
+    const next2 = candles[i + 2]
+    // Bullish OB: bearish candle followed by strong bullish move
+    if (c.close < c.open && next.close > next.open && next2.close > next2.open) {
+      const impulseSize = next2.close - c.low
+      const avgRange = candles.slice(Math.max(0, i - 10), i).reduce((s, cc) => s + (cc.high - cc.low), 0) / 10
+      if (impulseSize > avgRange * 1.5) {
+        bullishOB = true
+        bullishOBLevel = c.low
+      }
+    }
+    // Bearish OB: bullish candle followed by strong bearish move
+    if (c.close > c.open && next.close < next.open && next2.close < next2.open) {
+      const impulseSize = c.high - next2.close
+      const avgRange = candles.slice(Math.max(0, i - 10), i).reduce((s, cc) => s + (cc.high - cc.low), 0) / 10
+      if (impulseSize > avgRange * 1.5) {
+        bearishOB = true
+        bearishOBLevel = c.high
+      }
+    }
+  }
+
+  // FVG detection — 3-candle imbalance
+  let fvg = 'NONE'
+  let fvgHigh = null, fvgLow = null
+  for (let i = n - 8; i < n - 2; i++) {
+    const c1 = candles[i]
+    const c3 = candles[i + 2]
+    if (c3.low > c1.high) { fvg = 'BULLISH'; fvgHigh = c3.low; fvgLow = c1.high; break }
+    if (c3.high < c1.low) { fvg = 'BEARISH'; fvgHigh = c1.low; fvgLow = c3.high; break }
+  }
+
+  // BOS detection — break of recent swing high/low
+  let bos = 'NONE'
+  const recentHigh = Math.max(...candles.slice(n - 15, n - 1).map(c => c.high))
+  const recentLow  = Math.min(...candles.slice(n - 15, n - 1).map(c => c.low))
+  if (candles[n - 1].close > recentHigh) bos = 'BULLISH'
+  if (candles[n - 1].close < recentLow)  bos = 'BEARISH'
+
+  // CHoCH — change of character (first BOS against prevailing structure)
+  let choch = 'NONE'
+  const prevTrend = candles[n - 10].close < candles[n - 5].close ? 'UP' : 'DOWN'
+  if (prevTrend === 'UP' && bos === 'BEARISH') choch = 'BEARISH CHoCH'
+  if (prevTrend === 'DOWN' && bos === 'BULLISH') choch = 'BULLISH CHoCH'
+
+  // Premium/Discount zones — based on recent range
+  const rangeHigh = Math.max(...candles.slice(n - 20).map(c => c.high))
+  const rangeLow  = Math.min(...candles.slice(n - 20).map(c => c.low))
+  const equilibrium = (rangeHigh + rangeLow) / 2
+  const premium = price > equilibrium
+  const discount = price < equilibrium
+
+  return { bullishOB, bullishOBLevel, bearishOB, bearishOBLevel, fvg, fvgHigh, fvgLow, bos, choch, premium, discount }
+}
+
+function buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc }) {
   return {
     pair: cleanSymbol, timeframe: interval, htfTimeframe: htfInterval,
     currentPrice: String(price), direction,
-    setupName: `HTF ${htfTrend} + LTF Mean Reversion`,
+    setupName: `HTF ${htfTrend} + ${smc?.bullishOB || smc?.bearishOB ? 'OB' : 'Mean Reversion'} + ${ltf.pattern}`,
     mlScore, pullbackScore, htfTrend,
     htfAnalysis: `${htfInterval} trend is ${htfTrend}. SMA20=${htf.sma20?.toFixed(dp)} SMA50=${htf.sma50?.toFixed(dp)}.`,
     trendDirection: htfTrend === 'BULLISH' ? 'Bullish' : htfTrend === 'BEARISH' ? 'Bearish' : 'Neutral',
@@ -347,16 +492,21 @@ function buildFallback({ cleanSymbol, interval, htfInterval, price, direction, m
     meanReversionZone: `SMA 20 at ${ltf.sma20?.toFixed(dp)}`,
     rsiReading: `RSI ${ltf.rsi?.toFixed(1)}`,
     candlePattern: ltf.pattern,
+    smcOrderBlock: smc?.bullishOB ? `Bullish OB at ${smc.bullishOBLevel?.toFixed(dp)}` : smc?.bearishOB ? `Bearish OB at ${smc.bearishOBLevel?.toFixed(dp)}` : 'None detected',
+    smcFVG: smc?.fvg ? `${smc.fvg} FVG` : 'None',
+    smcBOS: smc?.bos ? `${smc.bos} BOS` : 'None',
+    smcCHoCH: smc?.choch || 'None',
+    smcZone: smc?.premium ? 'Premium - sell zone' : smc?.discount ? 'Discount - buy zone' : 'Equilibrium',
     entryPrice: String(price), stopLoss: sl,
     takeProfit1: tp1, takeProfit2: tp2, takeProfit3: tp3,
     riskReward: '1:3.3',
     sentiment: htfTrend === 'BULLISH' ? 'Bullish' : htfTrend === 'BEARISH' ? 'Bearish' : 'Neutral',
     sentimentScore: mlScore,
-    priceAction: `${ltf.pattern} at ${price}. Near SMA20 ${ltf.sma20?.toFixed(dp)}.`,
+    priceAction: `${ltf.pattern} at ${price}. ${smc?.bullishOB ? 'Bullish OB confluence.' : smc?.bearishOB ? 'Bearish OB confluence.' : 'Near SMA20.'}`,
     supportResistance: `Support: ${ltf.sr.supports.map(s=>s.toFixed(dp)).join(', ')||'none'}. Resistance: ${ltf.sr.resistances.map(r=>r.toFixed(dp)).join(', ')||'none'}.`,
-    technicalIndicators: `SMA8=${ltf.sma8?.toFixed(dp)} SMA20=${ltf.sma20?.toFixed(dp)} SMA50=${ltf.sma50?.toFixed(dp)} RSI=${ltf.rsi?.toFixed(1)} ATR=${ltf.atr?.toFixed(dp)}`,
-    marketSentiment: `HTF ${htfInterval} is ${htfTrend}. ML Score ${mlScore}/100.`,
-    summary: `${direction} on ${cleanSymbol}. Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}. ML=${mlScore}/100.`,
-    tags: [htfTrend, ltf.pattern.split(' ')[0], direction === 'NO SIGNAL' ? 'Waiting' : direction]
+    technicalIndicators: `SMA8=${ltf.sma8?.toFixed(dp)} SMA20=${ltf.sma20?.toFixed(dp)} RSI=${ltf.rsi?.toFixed(1)} ATR=${ltf.atr?.toFixed(dp)}. FVG: ${smc?.fvg}. BOS: ${smc?.bos}.`,
+    marketSentiment: `HTF ${htfInterval} is ${htfTrend}. SMC zone: ${smc?.premium ? 'Premium' : smc?.discount ? 'Discount' : 'Equilibrium'}. ML Score ${mlScore}/100.`,
+    summary: `${direction} on ${cleanSymbol}. Entry=${price} SL=${sl} TP1=${tp1}. OB: ${smc?.bullishOB || smc?.bearishOB ? 'confirmed' : 'none'}. ML=${mlScore}/100.`,
+    tags: [htfTrend, ltf.pattern.split(' ')[0], smc?.bos !== 'NONE' ? smc?.bos + ' BOS' : 'No BOS', direction === 'NO SIGNAL' ? 'Waiting' : direction]
   }
 }
