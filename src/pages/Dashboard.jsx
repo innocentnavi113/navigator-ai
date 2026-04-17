@@ -16,7 +16,7 @@ const SCAN_STEPS = [
   'Calculating indicators',
   'Generating signal',
 ]
-const TABS = ['Charts', 'Scanner', 'Multi-TF', 'Watchlist', 'Learn']
+const TABS = ['Scanner', 'Multi-TF', 'Watchlist','Charts', 'Learn']
 
 function loadRecentScans() {
   try { return JSON.parse(localStorage.getItem('nav_recent_scans') || '[]') } catch { return [] }
