@@ -1,20 +1,89 @@
+// api/analyze.js
+// Handles two modes:
+// 1. Chart image analysis (imageBase64 + imageType provided)
+// 2. Live market scanner (symbol + interval provided)
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const { symbol, interval, imageBase64, imageType, prompt: customPrompt } = req.body
+
+  if (!process.env.OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: 'OPENROUTER_API_KEY is not set' })
   }
 
-  const { symbol, interval } = req.body
+  // ── MODE 1: Chart image analysis ─────────────────────────────────────
+  if (imageBase64 && imageType) {
+    try {
+      const prompt = customPrompt || `Analyze this trading chart. You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON object starting with { and ending with }.
 
+{
+  "pair": "READ the exact instrument name from the chart label or title visible in the image. Do not guess.",
+  "timeframe": "detected timeframe e.g. H1",
+  "direction": "BUY or SELL",
+  "sentiment": "Bullish or Bearish or Neutral or Strongly Bullish or Strongly Bearish",
+  "sentimentScore": 50,
+  "entryPrice": "price level",
+  "stopLoss": "price level",
+  "takeProfit1": "price level",
+  "takeProfit2": "price level",
+  "takeProfit3": "price level",
+  "riskReward": "1:2",
+  "priceAction": "2-3 sentences on candlestick patterns and trend",
+  "supportResistance": "2-3 sentences on key S/R levels",
+  "technicalIndicators": "2-3 sentences on visible indicators",
+  "marketSentiment": "2-3 sentences on overall market sentiment",
+  "summary": "3-4 sentences comprehensive recommendation",
+  "tags": ["tag1", "tag2", "tag3"]
+}`
+
+      const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+          'X-Title': 'Navigator AI'
+        },
+        body: JSON.stringify({
+          model: 'meta-llama/llama-4-maverick:free',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        })
+      })
+
+      const aiData = await aiRes.json()
+      if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
+
+      let text = aiData.choices?.[0]?.message?.content || ''
+      text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) return res.status(500).json({ error: `Model returned unexpected content: "${text.slice(0, 200)}"` })
+
+      let result
+      try { result = JSON.parse(jsonMatch[0]) }
+      catch (e) { return res.status(500).json({ error: 'Failed to parse AI response as JSON' }) }
+
+      return res.status(200).json({ result })
+
+    } catch (err) {
+      return res.status(500).json({ error: err.message || 'Chart analysis failed' })
+    }
+  }
+
+  // ── MODE 2: Live market scanner ────────────────────────────────────────
   if (!symbol || !interval) {
-    return res.status(400).json({ error: 'Missing symbol or interval' })
+    return res.status(400).json({ error: 'Missing symbol or interval (or imageBase64 for chart mode)' })
   }
 
   if (!process.env.TWELVEDATA_API_KEY) {
     return res.status(500).json({ error: 'TWELVEDATA_API_KEY is not set' })
-  }
-
-  if (!process.env.OPENROUTER_API_KEY) {
-    return res.status(500).json({ error: 'OPENROUTER_API_KEY is not set' })
   }
 
   const htfMap = {
@@ -31,23 +100,17 @@ export default async function handler(req, res) {
       fetchCandles(cleanSymbol, htfInterval)
     ])
 
-    if (ltfData.error) {
-      return res.status(400).json({ error: ltfData.error })
-    }
+    if (ltfData.error) return res.status(400).json({ error: ltfData.error })
 
     const ltf = calcIndicators(ltfData.candles)
     const htf = calcIndicators(htfData.candles)
 
-    if (!ltf || !htf) {
-      return res.status(500).json({ error: 'Not enough candle data to calculate indicators' })
-    }
+    if (!ltf || !htf) return res.status(500).json({ error: 'Not enough candle data' })
 
-    // HTF Trend
     const htfBullish = htf.latestClose > htf.sma50 && htf.sma20 > htf.sma50
     const htfBearish = htf.latestClose < htf.sma50 && htf.sma20 < htf.sma50
     const htfTrend   = htfBullish ? 'BULLISH' : htfBearish ? 'BEARISH' : 'NEUTRAL'
 
-    // LTF conditions
     const ltfNearSMA20   = Math.abs(ltf.latestClose - ltf.sma20) / ltf.latestClose < 0.003
     const ltfBelowSMA20  = ltf.latestClose < ltf.sma20 * 1.002
     const ltfAboveSMA20  = ltf.latestClose > ltf.sma20 * 0.998
@@ -56,13 +119,12 @@ export default async function handler(req, res) {
     const rsiExtremeBuy  = ltf.rsi < 35
     const rsiExtremeSell = ltf.rsi > 65
 
-    // Pullback score
     let pullbackScore = 0
     if (htfBullish) {
       if (ltfBelowSMA20 || ltfNearSMA20) pullbackScore += 30
       if (rsiBuyZone || rsiExtremeBuy)   pullbackScore += 25
       if (ltf.sma8 > ltf.sma20)         pullbackScore += 15
-      if (ltf.pattern.includes('Bull') || ltf.pattern.includes('Pin') || ltf.pattern.includes('Hammer')) pullbackScore += 20
+      if (ltf.pattern.includes('Bull') || ltf.pattern.includes('Pin')) pullbackScore += 20
       if (ltf.sr.supports.length > 0)   pullbackScore += 10
     }
     if (htfBearish) {
@@ -73,21 +135,18 @@ export default async function handler(req, res) {
       if (ltf.sr.resistances.length > 0) pullbackScore += 10
     }
 
-    // ML Score
     let mlScore = 0
     if (htfBullish || htfBearish) mlScore += 40
     mlScore += Math.round(pullbackScore * 0.3)
     if ((htfBullish && rsiBuyZone)  || (htfBearish && rsiSellZone))     mlScore += 15
     if ((htfBullish && rsiExtremeBuy) || (htfBearish && rsiExtremeSell)) mlScore += 10
-    if (ltf.pattern !== 'No clear pattern' && ltf.pattern !== 'None detected') mlScore += 15
+    if (ltf.pattern !== 'No clear pattern') mlScore += 15
     mlScore = Math.min(100, mlScore)
 
-    // Direction
     let direction = 'NO SIGNAL'
     if (htfBullish && pullbackScore >= 40 && mlScore >= 55) direction = 'BUY'
     if (htfBearish && pullbackScore >= 40 && mlScore >= 55) direction = 'SELL'
 
-    // SL/TP
     const dp    = ltf.latestClose < 10 ? 5 : ltf.latestClose < 1000 ? 4 : 2
     const atr   = ltf.atr
     const price = ltf.latestClose
@@ -117,7 +176,7 @@ ${direction==='BUY' ?`BUY:  Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${
 ${direction==='SELL'?`SELL: Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
 `
 
-    const prompt = `You are NAVIGATOR AI trading analyst. Use ONLY this real data:
+    const aiPrompt = `You are NAVIGATOR AI trading analyst. Use ONLY this real data:
 ${summary}
 
 Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markdown.
@@ -133,35 +192,27 @@ Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markd
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-001',
+        model: 'openrouter/auto',
         max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: aiPrompt }]
       })
     })
 
     const aiData = await aiRes.json()
-    if (!aiRes.ok) {
-      return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
-    }
+    if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
 
     let text = aiData.choices?.[0]?.message?.content || ''
     text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
-
     const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return res.status(500).json({ error: `AI returned unexpected content: "${text.slice(0, 200)}"` })
-    }
+    if (!jsonMatch) return res.status(500).json({ error: `AI returned unexpected content: "${text.slice(0, 200)}"` })
 
     let jsonStr = jsonMatch[0]
     jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1')
-    jsonStr = jsonStr.replace(/:\s*"([^"]*)"(?=\s*[,}])/g, (match, val) => {
-      return `: "${val.replace(/"/g, "'")}"`
-    })
+    jsonStr = jsonStr.replace(/:\s*"([^"]*)"(?=\s*[,}])/g, (match, val) => `: "${val.replace(/"/g, "'")}"`)
 
     let result
-    try {
-      result = JSON.parse(jsonStr)
-    } catch (e) {
+    try { result = JSON.parse(jsonStr) }
+    catch (e) {
       result = buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp })
     }
 
@@ -172,70 +223,22 @@ Reply with ONLY this JSON. Keep ALL string values SHORT (max 80 chars). No markd
   }
 }
 
-// ── Symbol variants to try ──────────────────────────────────────────────
-function getSymbolVariants(symbol) {
-  const s = symbol.trim().toUpperCase()
-  const variants = [s]
-
-  // BTC/USD → BTCUSD, BTC/USDT, BTCUSDT
-  if (s.includes('/')) {
-    const [base, quote] = s.split('/')
-    variants.push(`${base}${quote}`)           // BTCUSD
-    variants.push(`${base}/USDT`)              // BTC/USDT (crypto)
-    variants.push(`${base}USDT`)               // BTCUSDT
-    variants.push(`${base}USD`)                // BTCUSD
-  }
-
-  // Crypto without slash: BTCUSD → BTC/USD
-  if (!s.includes('/') && s.length >= 6) {
-    const base  = s.slice(0, 3)
-    const quote = s.slice(3)
-    variants.push(`${base}/${quote}`)
-  }
-
-  // Index aliases
-  const aliases = {
-    'US30': 'DJI', 'DOW': 'DJI', 'DOWJONES': 'DJI',
-    'NAS100': 'NDX', 'NASDAQ': 'NDX', 'NQ': 'NDX',
-    'SP500': 'SPX', 'S&P500': 'SPX',
-    'DAX': 'DAX', 'FTSE': 'FTSE100',
-    'XAUUSD': 'XAU/USD', 'GOLD': 'XAU/USD',
-    'XAGUSD': 'XAG/USD', 'SILVER': 'XAG/USD',
-    'USOIL': 'WTI', 'OIL': 'WTI',
-  }
-  if (aliases[s]) variants.push(aliases[s])
-
-  return [...new Set(variants)]
-}
-
 async function fetchCandles(symbol, interval) {
-  const variants = getSymbolVariants(symbol)
-
-  for (const sym of variants) {
-    const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
+  const variants = [symbol, symbol.replace('/', ''), symbol.replace('/', '') + 'T']
+  for (const sym of [...new Set(variants)]) {
     try {
+      const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
       const res  = await fetch(url)
       const data = await res.json()
-      if (data.status !== 'error' && data.values && Array.isArray(data.values) && data.values.length > 10) {
-        return { candles: parseCandles(data.values), resolvedSymbol: sym }
+      if (data.status !== 'error' && data.values?.length > 10) {
+        return { candles: data.values.reverse().map(c => ({
+          time: c.datetime, open: parseFloat(c.open), high: parseFloat(c.high),
+          low: parseFloat(c.low), close: parseFloat(c.close), volume: parseFloat(c.volume || 0)
+        })) }
       }
     } catch (e) {}
   }
-
-  return {
-    error: `Could not find data for "${symbol}". Supported formats: EUR/USD, XAU/USD, BTC/USD, ETH/USD, SPY, AAPL, US30`
-  }
-}
-
-function parseCandles(values) {
-  return values.reverse().map(c => ({
-    time: c.datetime,
-    open:   parseFloat(c.open),
-    high:   parseFloat(c.high),
-    low:    parseFloat(c.low),
-    close:  parseFloat(c.close),
-    volume: parseFloat(c.volume || 0)
-  }))
+  return { error: `Could not fetch data for "${symbol}". Try: EURUSD, BTC/USD, XAU/USD, SPY` }
 }
 
 function calcIndicators(candles) {
@@ -248,9 +251,8 @@ function calcIndicators(candles) {
   function calcSMA(data, period) {
     if (data.length < period) return null
     const result = new Array(period - 1).fill(null)
-    for (let i = period - 1; i < data.length; i++) {
+    for (let i = period - 1; i < data.length; i++)
       result.push(data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period)
-    }
     return result
   }
 
@@ -275,9 +277,8 @@ function calcIndicators(candles) {
 
   function calcATR(highs, lows, closes, period = 14) {
     const trs = [highs[0] - lows[0]]
-    for (let i = 1; i < highs.length; i++) {
+    for (let i = 1; i < highs.length; i++)
       trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])))
-    }
     let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period
     for (let i = period; i < trs.length; i++) atr = (atr * (period - 1) + trs[i]) / period
     return atr
@@ -296,10 +297,7 @@ function calcIndicators(candles) {
       if (isHigh) resistances.push(highs[i])
       if (isLow)  supports.push(lows[i])
     }
-    return {
-      supports:    supports.filter(s => s < price).slice(-3),
-      resistances: resistances.filter(r => r > price).slice(0, 3)
-    }
+    return { supports: supports.filter(s => s < price).slice(-3), resistances: resistances.filter(r => r > price).slice(0, 3) }
   }
 
   function detectPattern(candles) {
@@ -320,22 +318,20 @@ function calcIndicators(candles) {
     return 'No clear pattern'
   }
 
-  const sma8Arr   = calcSMA(closes, 8)
-  const sma20Arr  = calcSMA(closes, 20)
-  const sma50Arr  = calcSMA(closes, 50)
-  const sma200Arr = calcSMA(closes, Math.min(200, n - 1))
-  const rsiArr    = calcRSI(closes, 14)
+  const sma8Arr  = calcSMA(closes, 8)
+  const sma20Arr = calcSMA(closes, 20)
+  const sma50Arr = calcSMA(closes, 50)
+  const rsiArr   = calcRSI(closes, 14)
 
   return {
     latestClose: closes[n - 1],
-    sma8:        sma8Arr?.[n - 1]   ?? null,
-    sma20:       sma20Arr?.[n - 1]  ?? null,
-    sma50:       sma50Arr?.[n - 1]  ?? null,
-    sma200:      sma200Arr?.[n - 1] ?? null,
-    rsi:         rsiArr?.[n - 1]    ?? 50,
-    atr:         calcATR(highs, lows, closes, 14),
-    sr:          calcSR(highs, lows),
-    pattern:     detectPattern(candles)
+    sma8:    sma8Arr?.[n - 1]  ?? null,
+    sma20:   sma20Arr?.[n - 1] ?? null,
+    sma50:   sma50Arr?.[n - 1] ?? null,
+    rsi:     rsiArr?.[n - 1]   ?? 50,
+    atr:     calcATR(highs, lows, closes, 14),
+    sr:      calcSR(highs, lows),
+    pattern: detectPattern(candles)
   }
 }
 
