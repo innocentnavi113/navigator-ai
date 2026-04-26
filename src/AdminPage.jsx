@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase, supabaseAdmin } from '../supabase'
+import { supabase } from '../supabase'
 import styles from './AdminPage.module.css'
 
 const ADMIN_EMAIL = 'majolainnocent11@gmail.com'
@@ -28,13 +28,13 @@ export default function AdminPage() {
     }
   }, [session])
 
-  async function fetchAll() {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers()
-    if (error) {
-      console.error(error)
-      return
-    }
-    const users = data.users
+async function fetchAll() {
+  const response = await fetch('/api/admin-users')
+  const { users, error } = await response.json()
+  if (error) {
+    console.error(error)
+    return
+  }
 
     const { data: subs } = await supabase
       .from('subscriptions')
