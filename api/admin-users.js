@@ -6,11 +6,25 @@ export default async function handler(req, res) {
     process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
   )
 
-  const { data, error } = await supabaseAdmin.auth.admin.listUsers()
+  let allUsers = []
+  let page = 1
+  const perPage = 1000
 
-  if (error) {
-    return res.status(500).json({ error: error.message })
+  while (true) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage,
+    })
+
+    if (error) {
+      return res.status(500).json({ error: error.message })
+    }
+
+    allUsers = allUsers.concat(data.users)
+
+    if (data.users.length < perPage) break
+    page++
   }
 
-  res.status(200).json({ users: data.users })
+  res.status(200).json({ users: allUsers })
 }
