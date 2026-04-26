@@ -250,3 +250,26 @@
 }
 
 .subActions { display: flex; gap: 8px; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.pageBtn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,230,118,0.25);
+  background: rgba(0,230,118,0.06);
+  color: #00e676;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.pageBtn:hover:not(:disabled) { background: rgba(0,230,118,0.14); }
+.pageBtn:disabled { opacity: 0.35; cursor: not-allowed; }
