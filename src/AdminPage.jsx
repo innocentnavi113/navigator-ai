@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../supabase'
+import { supabase, supabaseAdmin } from '../supabase'
 import styles from './AdminPage.module.css'
 
 const ADMIN_EMAIL = 'majolainnocent11@gmail.com'
@@ -29,12 +29,34 @@ export default function AdminPage() {
   }, [session])
 
   async function fetchAll() {
-    const { data } = await supabase
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers()
+    if (error) {
+      console.error(error)
+      return
+    }
+    const users = data.users
+
+    const { data: subs } = await supabase
       .from('subscriptions')
       .select('*')
       .order('created_at', { ascending: false })
-    setAllSubs(data || [])
-    setResults(data || [])
+
+    const merged = users.map(user => {
+      const sub = subs?.find(s => s.email === user.email) || {}
+      return {
+        id: user.id,
+        email: user.email,
+        plan: sub.plan || 'free',
+        scans_left: sub.scans_left ?? 0,
+        scans_used: sub.scans_used ?? 0,
+        expires_at: sub.expires_at || null,
+        paystack_ref: sub.paystack_ref || null,
+        created_at: user.created_at,
+      }
+    })
+
+    setAllSubs(merged)
+    setResults(merged)
   }
 
   function handleSearch(val) {
@@ -64,7 +86,7 @@ export default function AdminPage() {
     const existing = allSubs.find(s => s.email === email)
 
     let error
-    if (existing) {
+    if (existing && existing.plan !== 'free') {
       const { error: e } = await supabase
         .from('subscriptions')
         .update({
