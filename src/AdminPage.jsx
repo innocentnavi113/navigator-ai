@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import styles from './AdminPage.module.css'
 
-const ADMIN_EMAIL = 'majolainnocent11@gmail.com'
+const ADMIN_EMAIL = 'majolainnocent11@gmail.com' 
 
 export default function AdminPage() {
   const [session, setSession] = useState(undefined)
