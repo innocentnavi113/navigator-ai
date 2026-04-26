@@ -23,10 +23,19 @@ export default function AdminPage() {
   }, [])
 
   useEffect(() => {
+  if (session?.user?.email === ADMIN_EMAIL) {
+    fetchAll()
+  }
+}, [session])
+
+useEffect(() => {
+  const timer = setTimeout(() => {
     if (session?.user?.email === ADMIN_EMAIL) {
       fetchAll()
     }
-  }, [session])
+  }, 2000)
+  return () => clearTimeout(timer)
+}, [session])
 
 async function fetchAll() {
   const response = await fetch('/api/admin-users')
