@@ -3,12 +3,12 @@
 // 1. Chart image analysis (imageBase64 + imageType provided)
 // 2. Live market scanner (symbol + interval provided)
 
-// ── Vercel max duration (requires Pro for >10s, set to 60s) ──────────────────
+// ── Vercel max duration (requires Pro for >10s) ──────────────────────────────
 export const config = { maxDuration: 60 }
 
 // ── In-memory cache for candle data (60s TTL) ────────────────────────────────
 const candleCache = new Map()
-const CACHE_TTL = 60_000 // 60 seconds
+const CACHE_TTL = 60_000
 
 function getCached(key) {
   const entry = candleCache.get(key)
@@ -125,7 +125,7 @@ Classical TA Framework — identify:
             ]
           }]
         })
-      }, 25000) // 25s timeout for image analysis
+      }, 25000)
 
       const aiData = await aiRes.json()
       if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
@@ -274,29 +274,28 @@ Classical TA Framework — identify:
     const tp2 = direction === 'BUY' ? buyTP2 : sellTP2
     const tp3 = direction === 'BUY' ? buyTP3 : sellTP3
 
-    const summary = `
-SYMBOL: ${cleanSymbol} | LTF: ${interval} | HTF: ${htfInterval}
-HTF: Close=${htf.latestClose} SMA20=${htf.sma20?.toFixed(dp)} SMA50=${htf.sma50?.toFixed(dp)} TREND=${htfTrend}
-LTF: Close=${price} SMA8=${ltf.sma8?.toFixed(dp)} SMA20=${ltf.sma20?.toFixed(dp)} SMA50=${ltf.sma50?.toFixed(dp)} RSI=${ltf.rsi?.toFixed(1)} ATR=${atr?.toFixed(dp)}
-CLASSICAL PATTERN: ${ltf.pattern}
-SUPPORT: ${ltf.sr.supports.map(s=>s.toFixed(dp)).join(',')||'none'}
-RESISTANCE: ${ltf.sr.resistances.map(r=>r.toFixed(dp)).join(',')||'none'}
-SMC: BullishOB=${smc.bullishOB ? smc.bullishOBLevel?.toFixed(dp) : 'none'} | BearishOB=${smc.bearishOB ? smc.bearishOBLevel?.toFixed(dp) : 'none'}
-SMC: FVG=${smc.fvg} | BOS=${smc.bos} | CHoCH=${smc.choch} | Premium=${smc.premium} | Discount=${smc.discount}
-SIGNAL: ${direction} | ML=${mlScore} | PULLBACK=${pullbackScore}
-${direction==='BUY' ?`BUY:  Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
-${direction==='SELL'?`SELL: Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
-`
+    // ── Step 1: Build instant local result (always works, zero latency) ──
+    const fallbackArgs = { cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc }
+    const result = buildFallback(fallbackArgs)
 
-    const aiPrompt = `You are NAVIGATOR AI — an elite trading analyst combining Smart Money Concepts (SMC) and Classical Technical Analysis. Use ONLY this real market data:
-${summary}
+    // ── Step 2: Ask a fast 8b model to polish ONLY the 4 text fields ──────
+    // Total budget: 7s. If it takes longer, we already have a complete result.
+    const textPolishPrompt = `You are a trading analyst. Rewrite these 4 fields using ONLY the data below. Keep each under 120 chars. Reply ONLY with JSON, no markdown.
 
-Reply with ONLY this JSON. Keep ALL string values SHORT (max 100 chars). No markdown.
+DATA:
+Symbol: ${cleanSymbol} | Direction: ${direction} | HTF: ${htfTrend} on ${htfInterval}
+Price: ${price} | SL: ${sl} | TP1: ${tp1} | TP2: ${tp2} | TP3: ${tp3}
+Pattern: ${ltf.pattern} | RSI: ${ltf.rsi?.toFixed(1)} | ATR: ${atr?.toFixed(dp)}
+SMA8: ${ltf.sma8?.toFixed(dp)} | SMA20: ${ltf.sma20?.toFixed(dp)} | SMA50: ${ltf.sma50?.toFixed(dp)}
+OB: ${smc.bullishOB ? 'Bullish at '+smc.bullishOBLevel?.toFixed(dp) : smc.bearishOB ? 'Bearish at '+smc.bearishOBLevel?.toFixed(dp) : 'None'}
+FVG: ${smc.fvg} | BOS: ${smc.bos} | CHoCH: ${smc.choch}
+Zone: ${smc.premium ? 'Premium' : smc.discount ? 'Discount' : 'Equilibrium'}
+Support: ${ltf.sr.supports.map(s=>s.toFixed(dp)).join(', ')||'none'}
+Resistance: ${ltf.sr.resistances.map(r=>r.toFixed(dp)).join(', ')||'none'}
+ML Score: ${mlScore}/100 | Pullback Score: ${pullbackScore}
 
-{"pair":"${cleanSymbol}","timeframe":"${interval}","htfTimeframe":"${htfInterval}","currentPrice":"${price}","direction":"${direction}","setupName":"brief SMC+Classical setup name","mlScore":${mlScore},"pullbackScore":${pullbackScore},"htfTrend":"${htfTrend}","htfAnalysis":"1 sentence on HTF trend and SMC structure","trendDirection":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","trendStrength":"${mlScore>=70?'STRONG':mlScore>=50?'MODERATE':'WEAK'}","meanReversionZone":"SMA20 + OB zone description","rsiReading":"RSI ${ltf.rsi?.toFixed(1)} status","candlePattern":"${ltf.pattern}","smcOrderBlock":"${smc.bullishOB ? 'Bullish OB at '+smc.bullishOBLevel?.toFixed(dp) : smc.bearishOB ? 'Bearish OB at '+smc.bearishOBLevel?.toFixed(dp) : 'None detected'}","smcFVG":"${smc.fvg} FVG","smcBOS":"${smc.bos} BOS","smcCHoCH":"${smc.choch}","smcZone":"${smc.premium ? 'Premium - sell zone' : smc.discount ? 'Discount - buy zone' : 'Equilibrium'}","entryPrice":"${price}","stopLoss":"${sl}","takeProfit1":"${tp1}","takeProfit2":"${tp2}","takeProfit3":"${tp3}","riskReward":"1:3.3","sentiment":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","sentimentScore":${mlScore},"priceAction":"1-2 sentences on candle pattern and SMC context","supportResistance":"1-2 sentences on S/R and order block levels","technicalIndicators":"1-2 sentences on SMA RSI ATR and SMC zones","marketSentiment":"1-2 sentences on MTF confluence with SMC bias","summary":"2-3 sentences combining SMC and classical analysis for the trade","tags":["${htfTrend}","${ltf.pattern.split(' ')[0]}","${smc.bos!=='NONE'?smc.bos+' BOS':'No BOS'}","${direction==='NO SIGNAL'?'Waiting':direction}"]}`
+{"priceAction":"1-2 sentences on candle pattern and SMC context","supportResistance":"1-2 sentences on key S/R and OB levels","marketSentiment":"1-2 sentences on HTF bias and SMC zone","summary":"2-3 sentences overall trade recommendation"}`
 
-    // ── Call AI with 20s timeout; fallback to local result if it times out ──
-    let result
     try {
       const aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -307,38 +306,32 @@ Reply with ONLY this JSON. Keep ALL string values SHORT (max 100 chars). No mark
           'X-Title': 'Navigator AI'
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.0-flash-001',
-          max_tokens: 1000,
-          messages: [{ role: 'user', content: aiPrompt }]
+          model: 'meta-llama/llama-3.1-8b-instruct:free', // Fast free model, ~2-3s
+          max_tokens: 400,
+          messages: [{ role: 'user', content: textPolishPrompt }]
         })
-      }, 20000) // 20s timeout for scanner AI call
+      }, 7000) // Hard 7s deadline — Vercel safe zone
 
-      if (!aiRes.ok) {
-        // AI rate limited or error — use local fallback immediately
-        console.warn('OpenRouter error, using fallback:', aiRes.status)
-        result = buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc })
-      } else {
+      if (aiRes.ok) {
         const aiData = await aiRes.json()
         let text = aiData.choices?.[0]?.message?.content || ''
         text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
         const jsonMatch = text.match(/\{[\s\S]*\}/)
-
-        if (!jsonMatch) {
-          result = buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc })
-        } else {
-          let jsonStr = jsonMatch[0]
-          jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1')
-          jsonStr = jsonStr.replace(/:\s*"([^"]*)"(?=\s*[,}])/g, (match, val) => `: "${val.replace(/"/g, "'")}"`)
-          try { result = JSON.parse(jsonStr) }
-          catch (e) {
-            result = buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc })
-          }
+        if (jsonMatch) {
+          try {
+            const polished = JSON.parse(jsonMatch[0])
+            // Only overwrite the 4 text fields — keep all computed values intact
+            if (polished.priceAction)        result.priceAction        = polished.priceAction
+            if (polished.supportResistance)  result.supportResistance  = polished.supportResistance
+            if (polished.marketSentiment)    result.marketSentiment    = polished.marketSentiment
+            if (polished.summary)            result.summary            = polished.summary
+          } catch (e) { /* JSON parse failed — keep fallback text */ }
         }
       }
+      // If aiRes not ok (429, 500 etc) — silently keep fallback text
     } catch (aiErr) {
-      // Timeout or network error — use local fallback, still return 200
-      console.warn('AI call failed, using fallback:', aiErr.message)
-      result = buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc })
+      // Timeout or network error — silently keep fallback text, still return 200
+      console.warn('Text polish timed out, using fallback text:', aiErr.message)
     }
 
     return res.status(200).json({ result })
@@ -353,7 +346,7 @@ async function fetchCandles(symbol, interval) {
   for (const sym of [...new Set(variants)]) {
     try {
       const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
-      const res  = await fetchWithTimeout(url, {}, 8000) // 8s timeout per candle fetch
+      const res  = await fetchWithTimeout(url, {}, 8000)
       const data = await res.json()
       if (data.status !== 'error' && data.values?.length > 10) {
         return { candles: data.values.reverse().map(c => ({
