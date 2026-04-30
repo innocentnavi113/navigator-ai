@@ -21,7 +21,7 @@ function setCache(key, data) {
 }
 
 // ── Fetch with timeout helper ─────────────────────────────────────────────────
-async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -358,7 +358,7 @@ ML Score: ${mlScore}/100 | Pullback Score: ${pullbackScore}
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`, 'HTTP-Referer': 'https://navigator-ai-three.vercel.app', 'X-Title': 'Navigator AI' },
               body: JSON.stringify({ model, max_tokens: 400, messages: [{ role: 'user', content: textPolishPrompt }] })
-            }, 8000)
+            }, 10000)
             if (fb.ok) { const d = await fb.json(); if (applyPolish(d.choices?.[0]?.message?.content || '')) break }
           } catch { /* try next model */ }
         }
@@ -379,7 +379,7 @@ async function fetchCandles(symbol, interval) {
   for (const sym of [...new Set(variants)]) {
     try {
       const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
-      const res  = await fetchWithTimeout(url, {}, 8000)
+      const res  = await fetchWithTimeout(url, {}, 12000)
       const data = await res.json()
       if (data.status !== 'error' && data.values?.length > 10) {
         return { candles: data.values.reverse().map(c => ({
