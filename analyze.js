@@ -106,43 +106,63 @@ Classical TA Framework — identify:
   "tags": ["tag1", "tag2", "tag3", "tag4"]
 }`
 
-      const aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
-          'X-Title': 'Navigator AI'
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.0-flash-001',
-          max_tokens: 1500,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
-              { type: 'text', text: prompt }
-            ]
-          }]
-        })
-      }, 25000)
+      // Build request payload once, reuse for fallback model
+      const imageHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+        'X-Title': 'Navigator AI'
+      }
+      const imageMessages = [{ role: 'user', content: [
+        { type: 'image_url', image_url: { url: `data:${imageType};base64;${imageBase64}` } },
+        { type: 'text', text: prompt }
+      ]}]
+
+      // Try Gemini 2.0 Flash first, fall back to gemini-flash-1.5 if it fails
+      let aiRes
+      try {
+        aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST', headers: imageHeaders,
+          body: JSON.stringify({ model: 'google/gemini-2.0-flash-001', max_tokens: 2000, messages: imageMessages })
+        }, 45000)
+        if (!aiRes.ok) throw new Error('primary_failed')
+      } catch {
+        console.warn('Gemini 2.0 failed, trying gemini-flash-1.5...')
+        aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST', headers: imageHeaders,
+          body: JSON.stringify({ model: 'google/gemini-flash-1.5', max_tokens: 2000, messages: imageMessages })
+        }, 40000)
+      }
 
       const aiData = await aiRes.json()
       if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
 
       let text = aiData.choices?.[0]?.message?.content || ''
       text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) return res.status(500).json({ error: `Model returned unexpected content: "${text.slice(0, 200)}"` })
+      // Try to extract JSON even if response is truncated
+      let jsonStr = text
+      const jsonStart = text.indexOf('{')
+      if (jsonStart > 0) jsonStr = text.slice(jsonStart)
+      // Close any unclosed JSON by finding last valid field
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) return res.status(500).json({ error: 'AI returned malformed response. Please try again.' })
 
       let result
       try { result = JSON.parse(jsonMatch[0]) }
-      catch (e) { return res.status(500).json({ error: 'Failed to parse AI response as JSON' }) }
+      catch (e) {
+        // Attempt to fix truncated JSON by closing it
+        try {
+          const fixed = jsonMatch[0].replace(/,\s*$/, '') + '}'
+          result = JSON.parse(fixed)
+        } catch {
+          return res.status(500).json({ error: 'Failed to parse AI response. Please try again.' })
+        }
+      }
 
       return res.status(200).json({ result })
 
     } catch (err) {
-      if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out. Please try again.' })
+      if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out. Try a smaller screenshot.' })
       return res.status(500).json({ error: err.message || 'Chart analysis failed' })
     }
   }
@@ -312,53 +332,38 @@ ML Score: ${mlScore}/100 | Pullback Score: ${pullbackScore}
         })
       }, 9000)
 
-      // Helper to apply polished text fields to result
       function applyPolish(text) {
-        text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
-        const jsonMatch = text.match(/\{[\s\S]*\}/)
-        if (!jsonMatch) return false
+        text = (text || '').replace(/```json/gi, '').replace(/```/g, '').trim()
+        const m = text.match(/\{[\s\S]*\}/)
+        if (!m) return false
         try {
-          const polished = JSON.parse(jsonMatch[0])
-          if (polished.priceAction)       result.priceAction       = polished.priceAction
-          if (polished.supportResistance) result.supportResistance = polished.supportResistance
-          if (polished.marketSentiment)   result.marketSentiment   = polished.marketSentiment
-          if (polished.summary)           result.summary           = polished.summary
+          const p = JSON.parse(m[0])
+          if (p.priceAction)       result.priceAction       = p.priceAction
+          if (p.supportResistance) result.supportResistance = p.supportResistance
+          if (p.marketSentiment)   result.marketSentiment   = p.marketSentiment
+          if (p.summary)           result.summary           = p.summary
           return true
-        } catch (e) { return false }
+        } catch { return false }
       }
 
       if (aiRes.ok) {
-        const aiData = await aiRes.json()
-        applyPolish(aiData.choices?.[0]?.message?.content || '')
+        const d = await aiRes.json()
+        applyPolish(d.choices?.[0]?.message?.content || '')
       } else {
-        // Primary model rate-limited — try fallback free models in order
-        const fallbackModels = [
-          'mistralai/mistral-7b-instruct:free',
-          'google/gemma-3-4b-it:free',
-        ]
-        for (const model of fallbackModels) {
+        // Primary model rate-limited — rotate through fallback free models
+        const fallbacks = ['mistralai/mistral-7b-instruct:free', 'google/gemma-3-4b-it:free']
+        for (const model of fallbacks) {
           try {
-            const fbRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+            const fb = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-                'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
-                'X-Title': 'Navigator AI'
-              },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`, 'HTTP-Referer': 'https://navigator-ai-three.vercel.app', 'X-Title': 'Navigator AI' },
               body: JSON.stringify({ model, max_tokens: 400, messages: [{ role: 'user', content: textPolishPrompt }] })
             }, 8000)
-            if (fbRes.ok) {
-              const fbData = await fbRes.json()
-              const applied = applyPolish(fbData.choices?.[0]?.message?.content || '')
-              if (applied) break // success — stop trying more models
-            }
-          } catch (e) { /* this fallback timed out — try next */ }
+            if (fb.ok) { const d = await fb.json(); if (applyPolish(d.choices?.[0]?.message?.content || '')) break }
+          } catch { /* try next model */ }
         }
-        // If all models failed — fallback text is already set, just continue
       }
     } catch (aiErr) {
-      // Timeout or network error — silently keep fallback text, still return 200
       if (aiErr.name !== 'AbortError') console.warn('AI polish error:', aiErr.message)
     }
 

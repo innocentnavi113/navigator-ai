@@ -3,7 +3,6 @@ import { supabase } from '../supabase'
 import { useAlerts } from '../useAlerts'
 import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
-import NewsPanel from '../components/NewsPanel'
 import styles from './Dashboard.module.css'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
@@ -55,10 +54,9 @@ export default function Dashboard({ session }) {
   const {
     alertsEnabled, permission, watchlist, minMlScore,
     scanning, lastScan,
-    newsAlerts, latestNews, forexNews, btcNews, tweets, trumpAlerts, lastNewsScan,
-    toggleAlerts, toggleNewsAlerts,
+    toggleAlerts,
     addToWatchlist, removeFromWatchlist,
-    scanWatchlist, scanNews, alertOnSignal, setMinMlScore,
+    scanWatchlist, alertOnSignal, setMinMlScore,
   } = useAlerts()
 
   const { plan, scansLeft, canScan, expiryDate, consumeScan } = useSubscription()
@@ -102,11 +100,7 @@ export default function Dashboard({ session }) {
   function clearRecentScans() { setRecentScans([]); saveRecentScans([]); setShowRecent(false) }
 
   async function analyzeSymbol(sym = symbol, intv = interval) {
-    const safeSym = (typeof sym === 'string' ? sym : symbol).trim()
-    const safeIntv = (typeof intv === 'string' ? intv : interval) || '1h'
-    if (!safeSym) return
-    // Reassign so the rest of the function uses the safe values
-    sym = safeSym; intv = safeIntv
+    if (!sym.trim()) return
     if (!canScan) { setShowUpgrade(true); return }
     const ok = consumeScan()
     if (!ok) { setShowUpgrade(true); return }
@@ -351,11 +345,7 @@ export default function Dashboard({ session }) {
             <div className={styles.recentList}>
               {recentScans.map(scan => (
                 <button key={scan.id} className={styles.recentItem}
-                  onClick={() => {
-                    const s = scan.symbol; const i = scan.interval
-                    setSymbol(s); setInterval(i); setActiveTab('Scanner'); setShowRecent(false)
-                    setTimeout(() => analyzeSymbol(s, i), 0)
-                  }}>
+                  onClick={() => { setSymbol(scan.symbol); setInterval(scan.interval); setActiveTab('Scanner'); setShowRecent(false); analyzeSymbol(scan.symbol, scan.interval) }}>
                   <div className={styles.recentItemLeft}>
                     <div className={styles.recentSymbol}>{scan.symbol}</div>
                     <div className={styles.recentMeta}>{scan.interval} · {timeAgo(scan.scannedAt)}</div>
@@ -390,8 +380,6 @@ export default function Dashboard({ session }) {
           </div>
           {installPrompt ? <button className={styles.installBtn} onClick={handleInstall}>📲 Install App to Home Screen</button>
                          : <div className={styles.iosHint}>📱 iPhone: Safari → Share → Add to Home Screen</div>}
-          <NewsPanel latestNews={latestNews} forexNews={forexNews} btcNews={btcNews} tweets={tweets} trumpAlerts={trumpAlerts}
-            lastNewsScan={lastNewsScan} newsAlerts={newsAlerts} toggleNewsAlerts={toggleNewsAlerts} scanNews={scanNews} />
           <div className={styles.settingRow} style={{ borderBottom: 'none', paddingTop: 14 }}>
             <div><div className={styles.settingLabel}>Subscription</div>
               <div className={styles.settingDesc}>{plan === 'premium' ? `Premium · expires ${expiryDate}` : plan === 'standard' ? `Standard · ${scansLeft} scans left` : `Free · ${scansLeft} scans left`}</div>
@@ -732,11 +720,7 @@ export default function Dashboard({ session }) {
                     <span className={styles.watchTf}>{w.interval}</span>
                     <button className={styles.watchRemove} onClick={() => removeFromWatchlist(w.symbol)}>✕</button>
                   </div>
-                  <button className={styles.watchScanBtn} onClick={() => {
-                    const s = w.symbol; const i = w.interval
-                    setSymbol(s); setInterval(i); setActiveTab('Scanner')
-                    setTimeout(() => analyzeSymbol(s, i), 0)
-                  }}>Scan Now →</button>
+                  <button className={styles.watchScanBtn} onClick={() => { setSymbol(w.symbol); setInterval(w.interval); setActiveTab('Scanner'); analyzeSymbol(w.symbol, w.interval) }}>Scan Now →</button>
                 </div>
               ))}
             </div>
