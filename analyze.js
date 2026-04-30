@@ -106,32 +106,26 @@ Classical TA Framework — identify:
   "tags": ["tag1", "tag2", "tag3", "tag4"]
 }`
 
-      // Build image message once, reuse for both models
-      const imageMessages = [{ role: 'user', content: [
-        { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
-        { type: 'text', text: prompt }
-      ]}]
-      const imageHeaders = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
-        'X-Title': 'Navigator AI'
-      }
-
-      // Try Gemini 2.0 Flash first, fall back to Gemini Flash 1.5 if it times out
-      let aiRes
-      try {
-        aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST', headers: imageHeaders,
-          body: JSON.stringify({ model: 'google/gemini-2.0-flash-001', max_tokens: 1500, messages: imageMessages })
-        }, 45000)
-      } catch (timeoutErr) {
-        console.warn('Gemini 2.0 timed out, trying gemini-flash-1.5...')
-        aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST', headers: imageHeaders,
-          body: JSON.stringify({ model: 'google/gemini-flash-1.5', max_tokens: 1500, messages: imageMessages })
-        }, 40000)
-      }
+      const aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+          'X-Title': 'Navigator AI'
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.0-flash-001',
+          max_tokens: 1500,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        })
+      }, 25000)
 
       const aiData = await aiRes.json()
       if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
@@ -148,7 +142,7 @@ Classical TA Framework — identify:
       return res.status(200).json({ result })
 
     } catch (err) {
-      if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out. Try a smaller/clearer screenshot.' })
+      if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out. Please try again.' })
       return res.status(500).json({ error: err.message || 'Chart analysis failed' })
     }
   }
@@ -312,29 +306,57 @@ ML Score: ${mlScore}/100 | Pullback Score: ${pullbackScore}
           'X-Title': 'Navigator AI'
         },
         body: JSON.stringify({
-          model: 'meta-llama/llama-3.1-8b-instruct:free', // Fast free model, ~2-3s
+          model: 'meta-llama/llama-3.1-8b-instruct:free',
           max_tokens: 400,
           messages: [{ role: 'user', content: textPolishPrompt }]
         })
-      }, 9000) // 9s deadline — candles take ~3s, leaves 6s for AI
+      }, 9000)
+
+      // Helper to apply polished text fields to result
+      function applyPolish(text) {
+        text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+        const jsonMatch = text.match(/\{[\s\S]*\}/)
+        if (!jsonMatch) return false
+        try {
+          const polished = JSON.parse(jsonMatch[0])
+          if (polished.priceAction)       result.priceAction       = polished.priceAction
+          if (polished.supportResistance) result.supportResistance = polished.supportResistance
+          if (polished.marketSentiment)   result.marketSentiment   = polished.marketSentiment
+          if (polished.summary)           result.summary           = polished.summary
+          return true
+        } catch (e) { return false }
+      }
 
       if (aiRes.ok) {
         const aiData = await aiRes.json()
-        let text = aiData.choices?.[0]?.message?.content || ''
-        text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
-        const jsonMatch = text.match(/\{[\s\S]*\}/)
-        if (jsonMatch) {
+        applyPolish(aiData.choices?.[0]?.message?.content || '')
+      } else {
+        // Primary model rate-limited — try fallback free models in order
+        const fallbackModels = [
+          'mistralai/mistral-7b-instruct:free',
+          'google/gemma-3-4b-it:free',
+        ]
+        for (const model of fallbackModels) {
           try {
-            const polished = JSON.parse(jsonMatch[0])
-            // Only overwrite the 4 text fields — keep all computed values intact
-            if (polished.priceAction)        result.priceAction        = polished.priceAction
-            if (polished.supportResistance)  result.supportResistance  = polished.supportResistance
-            if (polished.marketSentiment)    result.marketSentiment    = polished.marketSentiment
-            if (polished.summary)            result.summary            = polished.summary
-          } catch (e) { /* JSON parse failed — keep fallback text */ }
+            const fbRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+                'X-Title': 'Navigator AI'
+              },
+              body: JSON.stringify({ model, max_tokens: 400, messages: [{ role: 'user', content: textPolishPrompt }] })
+            }, 8000)
+            if (fbRes.ok) {
+              const fbData = await fbRes.json()
+              const applied = applyPolish(fbData.choices?.[0]?.message?.content || '')
+              if (applied) break // success — stop trying more models
+            }
+          } catch (e) { /* this fallback timed out — try next */ }
         }
+        // If all models failed — fallback text is already set, just continue
       }
-      // If aiRes not ok (429, 500 etc) — silently keep fallback text
     } catch (aiErr) {
       // Timeout or network error — silently keep fallback text, still return 200
       if (aiErr.name !== 'AbortError') console.warn('AI polish error:', aiErr.message)
