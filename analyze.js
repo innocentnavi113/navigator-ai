@@ -106,26 +106,32 @@ Classical TA Framework — identify:
   "tags": ["tag1", "tag2", "tag3", "tag4"]
 }`
 
-      const aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
-          'X-Title': 'Navigator AI'
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.0-flash-001',
-          max_tokens: 1500,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
-              { type: 'text', text: prompt }
-            ]
-          }]
-        })
-      }, 25000)
+      // Build image message once, reuse for both models
+      const imageMessages = [{ role: 'user', content: [
+        { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
+        { type: 'text', text: prompt }
+      ]}]
+      const imageHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+        'X-Title': 'Navigator AI'
+      }
+
+      // Try Gemini 2.0 Flash first, fall back to Gemini Flash 1.5 if it times out
+      let aiRes
+      try {
+        aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST', headers: imageHeaders,
+          body: JSON.stringify({ model: 'google/gemini-2.0-flash-001', max_tokens: 1500, messages: imageMessages })
+        }, 45000)
+      } catch (timeoutErr) {
+        console.warn('Gemini 2.0 timed out, trying gemini-flash-1.5...')
+        aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST', headers: imageHeaders,
+          body: JSON.stringify({ model: 'google/gemini-flash-1.5', max_tokens: 1500, messages: imageMessages })
+        }, 40000)
+      }
 
       const aiData = await aiRes.json()
       if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
@@ -142,7 +148,7 @@ Classical TA Framework — identify:
       return res.status(200).json({ result })
 
     } catch (err) {
-      if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out. Please try again.' })
+      if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out. Try a smaller/clearer screenshot.' })
       return res.status(500).json({ error: err.message || 'Chart analysis failed' })
     }
   }
@@ -310,7 +316,7 @@ ML Score: ${mlScore}/100 | Pullback Score: ${pullbackScore}
           max_tokens: 400,
           messages: [{ role: 'user', content: textPolishPrompt }]
         })
-      }, 7000) // Hard 7s deadline — Vercel safe zone
+      }, 9000) // 9s deadline — candles take ~3s, leaves 6s for AI
 
       if (aiRes.ok) {
         const aiData = await aiRes.json()
@@ -331,7 +337,7 @@ ML Score: ${mlScore}/100 | Pullback Score: ${pullbackScore}
       // If aiRes not ok (429, 500 etc) — silently keep fallback text
     } catch (aiErr) {
       // Timeout or network error — silently keep fallback text, still return 200
-      console.warn('Text polish timed out, using fallback text:', aiErr.message)
+      if (aiErr.name !== 'AbortError') console.warn('AI polish error:', aiErr.message)
     }
 
     return res.status(200).json({ result })
