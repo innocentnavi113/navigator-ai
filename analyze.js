@@ -21,7 +21,7 @@ function setCache(key, data) {
 }
 
 // ── Fetch with timeout helper ─────────────────────────────────────────────────
-async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -106,63 +106,43 @@ Classical TA Framework — identify:
   "tags": ["tag1", "tag2", "tag3", "tag4"]
 }`
 
-      // Build request payload once, reuse for fallback model
-      const imageHeaders = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
-        'X-Title': 'Navigator AI'
-      }
-      const imageMessages = [{ role: 'user', content: [
-        { type: 'image_url', image_url: { url: `data:${imageType};base64;${imageBase64}` } },
-        { type: 'text', text: prompt }
-      ]}]
-
-      // Try Gemini 2.0 Flash first, fall back to gemini-flash-1.5 if it fails
-      let aiRes
-      try {
-        aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST', headers: imageHeaders,
-          body: JSON.stringify({ model: 'google/gemini-2.0-flash-001', max_tokens: 2000, messages: imageMessages })
-        }, 45000)
-        if (!aiRes.ok) throw new Error('primary_failed')
-      } catch {
-        console.warn('Gemini 2.0 failed, trying gemini-flash-1.5...')
-        aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST', headers: imageHeaders,
-          body: JSON.stringify({ model: 'google/gemini-flash-1.5', max_tokens: 2000, messages: imageMessages })
-        }, 40000)
-      }
+      const aiRes = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+          'X-Title': 'Navigator AI'
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.0-flash-001',
+          max_tokens: 1500,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        })
+      }, 25000)
 
       const aiData = await aiRes.json()
       if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
 
       let text = aiData.choices?.[0]?.message?.content || ''
       text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
-      // Try to extract JSON even if response is truncated
-      let jsonStr = text
-      const jsonStart = text.indexOf('{')
-      if (jsonStart > 0) jsonStr = text.slice(jsonStart)
-      // Close any unclosed JSON by finding last valid field
-      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) return res.status(500).json({ error: 'AI returned malformed response. Please try again.' })
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) return res.status(500).json({ error: `Model returned unexpected content: "${text.slice(0, 200)}"` })
 
       let result
       try { result = JSON.parse(jsonMatch[0]) }
-      catch (e) {
-        // Attempt to fix truncated JSON by closing it
-        try {
-          const fixed = jsonMatch[0].replace(/,\s*$/, '') + '}'
-          result = JSON.parse(fixed)
-        } catch {
-          return res.status(500).json({ error: 'Failed to parse AI response. Please try again.' })
-        }
-      }
+      catch (e) { return res.status(500).json({ error: 'Failed to parse AI response as JSON' }) }
 
       return res.status(200).json({ result })
 
     } catch (err) {
-      if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out. Try a smaller screenshot.' })
+      if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out. Please try again.' })
       return res.status(500).json({ error: err.message || 'Chart analysis failed' })
     }
   }
@@ -176,11 +156,21 @@ Classical TA Framework — identify:
     return res.status(500).json({ error: 'TWELVEDATA_API_KEY is not set' })
   }
 
+  // ── HTF = next meaningful timeframe up (scalper-friendly) ──────────────────
+  // For scalpers: 1min→5min, 5min→15min, 15min→1h
+  // For swing:    1h→4h, 4h→1day etc.
+  // HTF is used as a BIAS FILTER, not a hard blocker — LTF structure drives signal
   const htfMap = {
-    '1min': '15min', '5min': '1h', '15min': '4h', '30min': '4h',
-    '1h': '1day', '2h': '1day', '4h': '1week', '1day': '1month'
+    '1min':  '5min',   // scalper: 1m uses 5m as bias
+    '5min':  '15min',  // scalper: 5m uses 15m as bias
+    '15min': '1h',     // intraday: 15m uses 1h as bias
+    '30min': '1h',     // intraday: 30m uses 1h as bias
+    '1h':    '4h',     // swing: 1h uses 4h as bias
+    '2h':    '4h',     // swing: 2h uses 4h as bias
+    '4h':    '1day',   // position: 4h uses daily as bias
+    '1day':  '1week'   // investor: daily uses weekly as bias
   }
-  const htfInterval = htfMap[interval] || '1day'
+  const htfInterval = htfMap[interval] || '4h'
 
   try {
     const cleanSymbol = symbol.trim().toUpperCase()
@@ -210,61 +200,91 @@ Classical TA Framework — identify:
 
     if (!ltf || !htf) return res.status(500).json({ error: 'Not enough candle data' })
 
-    // ── Classical TA signals ──
+    // ── HTF bias (confirmation, not hard blocker) ──────────────────────
     const htfBullish = htf.latestClose > htf.sma50 && htf.sma20 > htf.sma50
     const htfBearish = htf.latestClose < htf.sma50 && htf.sma20 < htf.sma50
+    const htfNeutral = !htfBullish && !htfBearish
     const htfTrend   = htfBullish ? 'BULLISH' : htfBearish ? 'BEARISH' : 'NEUTRAL'
+
+    // ── LTF structure — PRIMARY signal source ─────────────────────────
+    const ltfBullish = ltf.latestClose > ltf.sma20 && ltf.sma8 > ltf.sma20
+    const ltfBearish = ltf.latestClose < ltf.sma20 && ltf.sma8 < ltf.sma20
 
     const ltfNearSMA20   = Math.abs(ltf.latestClose - ltf.sma20) / ltf.latestClose < 0.003
     const ltfBelowSMA20  = ltf.latestClose < ltf.sma20 * 1.002
     const ltfAboveSMA20  = ltf.latestClose > ltf.sma20 * 0.998
-    const rsiBuyZone     = ltf.rsi >= 30 && ltf.rsi <= 50
-    const rsiSellZone    = ltf.rsi >= 50 && ltf.rsi <= 70
+    const rsiBuyZone     = ltf.rsi >= 30 && ltf.rsi <= 55
+    const rsiSellZone    = ltf.rsi >= 45 && ltf.rsi <= 70
     const rsiExtremeBuy  = ltf.rsi < 35
     const rsiExtremeSell = ltf.rsi > 65
 
-    // ── SMC signals ──
+    // ── SMC signals on the selected timeframe ─────────────────────────
     const smc = calcSMC(ltfData.candles)
 
+    // ── Score based on LTF structure, HTF adds bonus not requirement ──
     let pullbackScore = 0
-    if (htfBullish) {
-      if (ltfBelowSMA20 || ltfNearSMA20) pullbackScore += 25
+
+    // LTF BUY conditions (primary)
+    if (ltfBullish || smc.bos === 'BULLISH') {
+      if (ltfBelowSMA20 || ltfNearSMA20) pullbackScore += 20
       if (rsiBuyZone || rsiExtremeBuy)   pullbackScore += 20
-      if (ltf.sma8 > ltf.sma20)         pullbackScore += 10
-      if (ltf.pattern.includes('Bull') || ltf.pattern.includes('Pin')) pullbackScore += 15
+      if (ltf.sma8 > ltf.sma20)         pullbackScore += 15
+      if (ltf.pattern.includes('Bull') || ltf.pattern.includes('Pin') || ltf.pattern.includes('Hammer')) pullbackScore += 15
       if (ltf.sr.supports.length > 0)   pullbackScore += 10
       if (smc.bullishOB)                pullbackScore += 15
       if (smc.fvg === 'BULLISH')        pullbackScore += 10
       if (smc.bos === 'BULLISH')        pullbackScore += 10
-      if (smc.discount)                 pullbackScore += 5
+      if (smc.choch === 'BULLISH CHoCH') pullbackScore += 8
+      if (smc.discount)                 pullbackScore += 7
     }
-    if (htfBearish) {
-      if (ltfAboveSMA20 || ltfNearSMA20) pullbackScore += 25
+
+    // LTF SELL conditions (primary)
+    if (ltfBearish || smc.bos === 'BEARISH') {
+      if (ltfAboveSMA20 || ltfNearSMA20) pullbackScore += 20
       if (rsiSellZone || rsiExtremeSell) pullbackScore += 20
-      if (ltf.sma8 < ltf.sma20)         pullbackScore += 10
-      if (ltf.pattern.includes('Bear') || ltf.pattern.includes('Shooting')) pullbackScore += 15
+      if (ltf.sma8 < ltf.sma20)         pullbackScore += 15
+      if (ltf.pattern.includes('Bear') || ltf.pattern.includes('Shooting') || ltf.pattern.includes('Marubozu')) pullbackScore += 15
       if (ltf.sr.resistances.length > 0) pullbackScore += 10
       if (smc.bearishOB)                pullbackScore += 15
       if (smc.fvg === 'BEARISH')        pullbackScore += 10
       if (smc.bos === 'BEARISH')        pullbackScore += 10
-      if (smc.premium)                  pullbackScore += 5
+      if (smc.choch === 'BEARISH CHoCH') pullbackScore += 8
+      if (smc.premium)                  pullbackScore += 7
     }
 
+    // ── ML Score: LTF is primary (60pts), HTF adds bonus (20pts) ──────
     let mlScore = 0
-    if (htfBullish || htfBearish) mlScore += 30
-    mlScore += Math.round(pullbackScore * 0.3)
-    if ((htfBullish && rsiBuyZone)  || (htfBearish && rsiSellZone))     mlScore += 10
-    if ((htfBullish && rsiExtremeBuy) || (htfBearish && rsiExtremeSell)) mlScore += 8
+    // LTF structure points
+    if (ltfBullish || ltfBearish) mlScore += 25
+    mlScore += Math.round(pullbackScore * 0.25)
     if (ltf.pattern !== 'No clear pattern') mlScore += 12
     if (smc.bullishOB || smc.bearishOB) mlScore += 12
     if (smc.fvg !== 'NONE')             mlScore += 8
     if (smc.bos !== 'NONE')             mlScore += 8
     if (smc.choch !== 'NONE')           mlScore += 7
+    // HTF bonus (confirms bias but not required)
+    if ((htfBullish && (ltfBullish || smc.bos === 'BULLISH')) ||
+        (htfBearish && (ltfBearish || smc.bos === 'BEARISH'))) mlScore += 20
+    else if (htfNeutral) mlScore += 8 // neutral HTF = small bonus, not penalty
+    if ((ltfBullish && rsiBuyZone)   || (ltfBearish && rsiSellZone))    mlScore += 8
+    if ((ltfBullish && rsiExtremeBuy)|| (ltfBearish && rsiExtremeSell)) mlScore += 6
     mlScore = Math.min(100, mlScore)
 
+    // ── Direction: driven by LTF, HTF used as soft filter only ───────
+    // With HTF alignment: normal threshold (50)
+    // Against HTF: higher threshold (70) — still allowed but needs stronger setup
+    // HTF neutral: normal threshold (50)
+    const htfAligned = (htfBullish && (ltfBullish || smc.bos === 'BULLISH')) ||
+                       (htfBearish && (ltfBearish || smc.bos === 'BEARISH'))
+    const threshold = htfAligned ? 50 : htfNeutral ? 50 : 70
+
     let direction = 'NO SIGNAL'
-    if (htfBullish && pullbackScore >= 40 && mlScore >= 55) direction = 'BUY'
-    if (htfBearish && pullbackScore >= 40 && mlScore >= 55) direction = 'SELL'
+    const buySetup  = (ltfBullish || smc.bos === 'BULLISH') && pullbackScore >= 35 && mlScore >= threshold
+    const sellSetup = (ltfBearish || smc.bos === 'BEARISH') && pullbackScore >= 35 && mlScore >= threshold
+    if (buySetup)  direction = 'BUY'
+    if (sellSetup) direction = 'SELL'
+    // If both LTF signals fire (choppy market), use HTF as tiebreaker
+    if (buySetup && sellSetup) direction = htfBullish ? 'BUY' : htfBearish ? 'SELL' : 'NO SIGNAL'
 
     const dp    = ltf.latestClose < 10 ? 5 : ltf.latestClose < 1000 ? 4 : 2
     const atr   = ltf.atr
@@ -326,45 +346,32 @@ ML Score: ${mlScore}/100 | Pullback Score: ${pullbackScore}
           'X-Title': 'Navigator AI'
         },
         body: JSON.stringify({
-          model: 'meta-llama/llama-3.1-8b-instruct:free',
+          model: 'meta-llama/llama-3.1-8b-instruct:free', // Fast free model, ~2-3s
           max_tokens: 400,
           messages: [{ role: 'user', content: textPolishPrompt }]
         })
-      }, 9000)
-
-      function applyPolish(text) {
-        text = (text || '').replace(/```json/gi, '').replace(/```/g, '').trim()
-        const m = text.match(/\{[\s\S]*\}/)
-        if (!m) return false
-        try {
-          const p = JSON.parse(m[0])
-          if (p.priceAction)       result.priceAction       = p.priceAction
-          if (p.supportResistance) result.supportResistance = p.supportResistance
-          if (p.marketSentiment)   result.marketSentiment   = p.marketSentiment
-          if (p.summary)           result.summary           = p.summary
-          return true
-        } catch { return false }
-      }
+      }, 7000) // Hard 7s deadline — Vercel safe zone
 
       if (aiRes.ok) {
-        const d = await aiRes.json()
-        applyPolish(d.choices?.[0]?.message?.content || '')
-      } else {
-        // Primary model rate-limited — rotate through fallback free models
-        const fallbacks = ['mistralai/mistral-7b-instruct:free', 'google/gemma-3-4b-it:free']
-        for (const model of fallbacks) {
+        const aiData = await aiRes.json()
+        let text = aiData.choices?.[0]?.message?.content || ''
+        text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+        const jsonMatch = text.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
           try {
-            const fb = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`, 'HTTP-Referer': 'https://navigator-ai-three.vercel.app', 'X-Title': 'Navigator AI' },
-              body: JSON.stringify({ model, max_tokens: 400, messages: [{ role: 'user', content: textPolishPrompt }] })
-            }, 10000)
-            if (fb.ok) { const d = await fb.json(); if (applyPolish(d.choices?.[0]?.message?.content || '')) break }
-          } catch { /* try next model */ }
+            const polished = JSON.parse(jsonMatch[0])
+            // Only overwrite the 4 text fields — keep all computed values intact
+            if (polished.priceAction)        result.priceAction        = polished.priceAction
+            if (polished.supportResistance)  result.supportResistance  = polished.supportResistance
+            if (polished.marketSentiment)    result.marketSentiment    = polished.marketSentiment
+            if (polished.summary)            result.summary            = polished.summary
+          } catch (e) { /* JSON parse failed — keep fallback text */ }
         }
       }
+      // If aiRes not ok (429, 500 etc) — silently keep fallback text
     } catch (aiErr) {
-      if (aiErr.name !== 'AbortError') console.warn('AI polish error:', aiErr.message)
+      // Timeout or network error — silently keep fallback text, still return 200
+      console.warn('Text polish timed out, using fallback text:', aiErr.message)
     }
 
     return res.status(200).json({ result })
@@ -379,7 +386,7 @@ async function fetchCandles(symbol, interval) {
   for (const sym of [...new Set(variants)]) {
     try {
       const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
-      const res  = await fetchWithTimeout(url, {}, 12000)
+      const res  = await fetchWithTimeout(url, {}, 8000)
       const data = await res.json()
       if (data.status !== 'error' && data.values?.length > 10) {
         return { candles: data.values.reverse().map(c => ({
