@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { useAlerts } from '../useAlerts'
 import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
+import NewsPanel from '../components/NewsPanel'
 import styles from './Dashboard.module.css'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
@@ -54,9 +55,10 @@ export default function Dashboard({ session }) {
   const {
     alertsEnabled, permission, watchlist, minMlScore,
     scanning, lastScan,
-    toggleAlerts,
+    newsAlerts, latestNews, forexNews, btcNews, tweets, trumpAlerts, lastNewsScan,
+    toggleAlerts, toggleNewsAlerts,
     addToWatchlist, removeFromWatchlist,
-    scanWatchlist, alertOnSignal, setMinMlScore,
+    scanWatchlist, scanNews, alertOnSignal, setMinMlScore,
   } = useAlerts()
 
   const { plan, scansLeft, canScan, expiryDate, consumeScan } = useSubscription()
@@ -129,7 +131,7 @@ export default function Dashboard({ session }) {
     if (!symbol.trim()) return
     if (plan !== 'premium' && scansLeft < 4) { setShowUpgrade(true); return }
     setHtfLoading(true); setHtfResults([])
-    for (const tf of ['15min', '1h', '4h', '1day']) {
+    for (const tf of ['5min', '15min', '1h', '4h']) {
       consumeScan()
       try {
         const res  = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: symbol.trim().toUpperCase(), interval: tf }) })
@@ -380,6 +382,8 @@ export default function Dashboard({ session }) {
           </div>
           {installPrompt ? <button className={styles.installBtn} onClick={handleInstall}>📲 Install App to Home Screen</button>
                          : <div className={styles.iosHint}>📱 iPhone: Safari → Share → Add to Home Screen</div>}
+          <NewsPanel latestNews={latestNews} forexNews={forexNews} btcNews={btcNews} tweets={tweets} trumpAlerts={trumpAlerts}
+            lastNewsScan={lastNewsScan} newsAlerts={newsAlerts} toggleNewsAlerts={toggleNewsAlerts} scanNews={scanNews} />
           <div className={styles.settingRow} style={{ borderBottom: 'none', paddingTop: 14 }}>
             <div><div className={styles.settingLabel}>Subscription</div>
               <div className={styles.settingDesc}>{plan === 'premium' ? `Premium · expires ${expiryDate}` : plan === 'standard' ? `Standard · ${scansLeft} scans left` : `Free · ${scansLeft} scans left`}</div>
@@ -668,7 +672,7 @@ export default function Dashboard({ session }) {
             <div className={styles.analyzingCard}>
               <div className={styles.analyzingOrb}><div className={styles.analyzingRing} /><div className={styles.analyzingCore}>◎</div></div>
               <div className={styles.analyzingTitle}>Multi-TF Scan</div>
-              <div className={styles.analyzingSubtitle}>Scanning 15min · 1h · 4h · 1day...</div>
+              <div className={styles.analyzingSubtitle}>Scanning 5min · 15min · 1h · 4h...</div>
             </div>
           ) : htfResults.length > 0 ? (
             <div className={styles.mtfGrid}>
@@ -733,7 +737,7 @@ export default function Dashboard({ session }) {
       {activeTab === 'Learn' && (
         <div className={styles.tabContent}>
           {[
-            { title: 'HTF Trend Filter', icon: '📈', text: 'Only trade in the direction of the higher timeframe trend. If the 4H shows a downtrend, only take SELL signals on the 15min.' },
+            { title: 'HTF Trend Filter', icon: '📈', text: 'Only trade in the direction of the higher timeframe trend. If the HTF shows a downtrend, only take SELL signals on the selected timeframe.' },
             { title: 'Mean Reversion Entry', icon: '🎯', text: 'Wait for price to pull back to the SMA 20. This gives you a low-risk entry with tight stop loss and high reward.' },
             { title: 'RSI Zone Filter', icon: '📊', text: 'For BUY signals RSI should be 30-50. For SELL signals RSI 50-70. Avoid entries at overbought or oversold extremes.' },
             { title: 'ATR-Based Risk', icon: '🛡️', text: 'Stop Loss at 1.5x ATR. Take Profit at 2x, 3.5x and 5x ATR for 3 targets. Adapts automatically to volatility.' },
