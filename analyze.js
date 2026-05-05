@@ -192,81 +192,86 @@ function computeCore(cleanSymbol, interval, htfInterval, ltfData, htfData) {
   const htf = calcIndicators(htfData.candles)
   if (!ltf || !htf) throw new Error('Not enough candle data')
 
-  const htfBullish = htf.latestClose > htf.sma50 && htf.sma20 > htf.sma50
-  const htfBearish = htf.latestClose < htf.sma50 && htf.sma20 < htf.sma50
+  // ── Pure SMC bias (HTF + LTF) — no SMAs ──
+  const htfSmc = calcSMC(htfData.candles)
+  const smc    = calcSMC(ltfData.candles)
+
+  const htfBullish = htfSmc.structureBias === 'BULLISH'
+  const htfBearish = htfSmc.structureBias === 'BEARISH'
   const htfNeutral = !htfBullish && !htfBearish
   const htfTrend   = htfBullish ? 'BULLISH' : htfBearish ? 'BEARISH' : 'NEUTRAL'
 
-  const ltfBullish = ltf.latestClose > ltf.sma20 && ltf.sma8 > ltf.sma20
-  const ltfBearish = ltf.latestClose < ltf.sma20 && ltf.sma8 < ltf.sma20
-  const ltfNearSMA20  = Math.abs(ltf.latestClose - ltf.sma20) / ltf.latestClose < 0.003
-  const ltfBelowSMA20 = ltf.latestClose < ltf.sma20 * 1.002
-  const ltfAboveSMA20 = ltf.latestClose > ltf.sma20 * 0.998
-  const rsiBuyZone = ltf.rsi >= 30 && ltf.rsi <= 55
-  const rsiSellZone = ltf.rsi >= 45 && ltf.rsi <= 70
-  const rsiExtremeBuy = ltf.rsi < 35
+  const ltfBullish = smc.structureBias === 'BULLISH'
+  const ltfBearish = smc.structureBias === 'BEARISH'
+  const rsiBuyZone     = ltf.rsi >= 30 && ltf.rsi <= 55
+  const rsiSellZone    = ltf.rsi >= 45 && ltf.rsi <= 70
+  const rsiExtremeBuy  = ltf.rsi < 35
   const rsiExtremeSell = ltf.rsi > 65
-
-  const smc = calcSMC(ltfData.candles)
 
   // Score with full reasoning trace
   const breakdown = []
   const add = (label, pts, side) => { if (pts) breakdown.push({ label, pts, side }) }
 
   let pullbackScore = 0
-  if (ltfBullish || smc.bos === 'BULLISH') {
-    if (ltfBelowSMA20 || ltfNearSMA20) { pullbackScore += 20; add('Pullback to SMA20', 20, 'BUY') }
-    if (rsiBuyZone || rsiExtremeBuy)   { pullbackScore += 20; add(`RSI in buy zone (${ltf.rsi.toFixed(1)})`, 20, 'BUY') }
-    if (ltf.sma8 > ltf.sma20)         { pullbackScore += 15; add('SMA8 > SMA20', 15, 'BUY') }
-    if (/Bull|Pin|Hammer/.test(ltf.pattern)) { pullbackScore += 15; add(`Pattern: ${ltf.pattern}`, 15, 'BUY') }
-    if (ltf.sr.supports.length > 0)   { pullbackScore += 10; add('Support nearby', 10, 'BUY') }
-    if (smc.bullishOB)                { pullbackScore += 15; add(`Bullish OB @ ${smc.bullishOBLevel}`, 15, 'BUY') }
-    if (smc.fvg === 'BULLISH')        { pullbackScore += 10; add('Bullish FVG', 10, 'BUY') }
-    if (smc.bos === 'BULLISH')        { pullbackScore += 10; add('Bullish BOS', 10, 'BUY') }
-    if (smc.choch === 'BULLISH CHoCH'){ pullbackScore += 8;  add('Bullish CHoCH', 8, 'BUY') }
-    if (smc.discount)                 { pullbackScore += 7;  add('In discount zone', 7, 'BUY') }
-    if (smc.liquiditySwept === 'BUYSIDE_RECLAIMED') { pullbackScore += 10; add('Sell-side liquidity swept + reclaimed', 10, 'BUY') }
-    if (smc.displacement === 'BULLISH') { pullbackScore += 6; add('Bullish displacement', 6, 'BUY') }
+  if (ltfBullish || smc.bos === 'BULLISH' || smc.choch === 'BULLISH CHoCH') {
+    if (smc.bullishOB)                                { pullbackScore += 22; add(`Bullish OB @ ${smc.bullishOBLevel}`, 22, 'BUY') }
+    if (smc.obMitigated === 'BULLISH_OB_MITIGATED')   { pullbackScore += 12; add('Bullish OB mitigated', 12, 'BUY') }
+    if (smc.liquiditySwept === 'BUYSIDE_RECLAIMED')   { pullbackScore += 18; add('Sell-side liquidity sweep + reclaim', 18, 'BUY') }
+    if (smc.fvg === 'BULLISH')                        { pullbackScore += 12; add('Bullish FVG', 12, 'BUY') }
+    if (smc.ifvg === 'BULLISH_RECLAIM')               { pullbackScore += 10; add('Bullish IFVG reclaim', 10, 'BUY') }
+    if (smc.bos === 'BULLISH')                        { pullbackScore += 12; add('Bullish BOS', 12, 'BUY') }
+    if (smc.choch === 'BULLISH CHoCH')                { pullbackScore += 10; add('Bullish CHoCH', 10, 'BUY') }
+    if (smc.discount)                                 { pullbackScore += 10; add('In discount zone', 10, 'BUY') }
+    if (smc.equalHL === 'EQUAL_HIGHS')                { pullbackScore += 6;  add('Equal highs above (target)', 6, 'BUY') }
+    if (smc.displacement === 'BULLISH')               { pullbackScore += 8;  add('Bullish displacement', 8, 'BUY') }
+    if (rsiBuyZone || rsiExtremeBuy)                  { pullbackScore += 10; add(`RSI buy zone (${ltf.rsi.toFixed(1)})`, 10, 'BUY') }
+    if (/Bull|Pin|Hammer|Engulf/i.test(ltf.pattern))  { pullbackScore += 10; add(`Pattern: ${ltf.pattern}`, 10, 'BUY') }
+    if (ltf.sr.supports.length > 0)                   { pullbackScore += 6;  add('Support nearby', 6, 'BUY') }
   }
-  if (ltfBearish || smc.bos === 'BEARISH') {
-    if (ltfAboveSMA20 || ltfNearSMA20) { pullbackScore += 20; add('Rally to SMA20', 20, 'SELL') }
-    if (rsiSellZone || rsiExtremeSell) { pullbackScore += 20; add(`RSI in sell zone (${ltf.rsi.toFixed(1)})`, 20, 'SELL') }
-    if (ltf.sma8 < ltf.sma20)         { pullbackScore += 15; add('SMA8 < SMA20', 15, 'SELL') }
-    if (/Bear|Shooting|Marubozu/.test(ltf.pattern)) { pullbackScore += 15; add(`Pattern: ${ltf.pattern}`, 15, 'SELL') }
-    if (ltf.sr.resistances.length > 0){ pullbackScore += 10; add('Resistance nearby', 10, 'SELL') }
-    if (smc.bearishOB)                { pullbackScore += 15; add(`Bearish OB @ ${smc.bearishOBLevel}`, 15, 'SELL') }
-    if (smc.fvg === 'BEARISH')        { pullbackScore += 10; add('Bearish FVG', 10, 'SELL') }
-    if (smc.bos === 'BEARISH')        { pullbackScore += 10; add('Bearish BOS', 10, 'SELL') }
-    if (smc.choch === 'BEARISH CHoCH'){ pullbackScore += 8;  add('Bearish CHoCH', 8, 'SELL') }
-    if (smc.premium)                  { pullbackScore += 7;  add('In premium zone', 7, 'SELL') }
-    if (smc.liquiditySwept === 'SELLSIDE_RECLAIMED') { pullbackScore += 10; add('Buy-side liquidity swept + reclaimed', 10, 'SELL') }
-    if (smc.displacement === 'BEARISH') { pullbackScore += 6; add('Bearish displacement', 6, 'SELL') }
+  if (ltfBearish || smc.bos === 'BEARISH' || smc.choch === 'BEARISH CHoCH') {
+    if (smc.bearishOB)                                { pullbackScore += 22; add(`Bearish OB @ ${smc.bearishOBLevel}`, 22, 'SELL') }
+    if (smc.obMitigated === 'BEARISH_OB_MITIGATED')   { pullbackScore += 12; add('Bearish OB mitigated', 12, 'SELL') }
+    if (smc.liquiditySwept === 'SELLSIDE_RECLAIMED')  { pullbackScore += 18; add('Buy-side liquidity sweep + reclaim', 18, 'SELL') }
+    if (smc.fvg === 'BEARISH')                        { pullbackScore += 12; add('Bearish FVG', 12, 'SELL') }
+    if (smc.ifvg === 'BEARISH_RECLAIM')               { pullbackScore += 10; add('Bearish IFVG reclaim', 10, 'SELL') }
+    if (smc.bos === 'BEARISH')                        { pullbackScore += 12; add('Bearish BOS', 12, 'SELL') }
+    if (smc.choch === 'BEARISH CHoCH')                { pullbackScore += 10; add('Bearish CHoCH', 10, 'SELL') }
+    if (smc.premium)                                  { pullbackScore += 10; add('In premium zone', 10, 'SELL') }
+    if (smc.equalHL === 'EQUAL_LOWS')                 { pullbackScore += 6;  add('Equal lows below (target)', 6, 'SELL') }
+    if (smc.displacement === 'BEARISH')               { pullbackScore += 8;  add('Bearish displacement', 8, 'SELL') }
+    if (rsiSellZone || rsiExtremeSell)                { pullbackScore += 10; add(`RSI sell zone (${ltf.rsi.toFixed(1)})`, 10, 'SELL') }
+    if (/Bear|Shooting|Marubozu|Engulf/i.test(ltf.pattern)) { pullbackScore += 10; add(`Pattern: ${ltf.pattern}`, 10, 'SELL') }
+    if (ltf.sr.resistances.length > 0)                { pullbackScore += 6;  add('Resistance nearby', 6, 'SELL') }
   }
 
+  // ML score: pure SMC weighting
   let mlScore = 0
-  if (ltfBullish || ltfBearish) mlScore += 25
-  mlScore += Math.round(pullbackScore * 0.25)
-  if (ltf.pattern !== 'No clear pattern') mlScore += 12
-  if (smc.bullishOB || smc.bearishOB) mlScore += 12
-  if (smc.fvg !== 'NONE')   mlScore += 8
-  if (smc.bos !== 'NONE')   mlScore += 8
-  if (smc.choch !== 'NONE') mlScore += 7
-  if (smc.equalHL)          mlScore += 5
-  if (smc.ifvg !== 'NONE')  mlScore += 6
+  mlScore += Math.round(pullbackScore * 0.45)
+  if (smc.bullishOB || smc.bearishOB) mlScore += 14
+  if (smc.obMitigated)        mlScore += 6
+  if (smc.fvg !== 'NONE')     mlScore += 8
+  if (smc.ifvg !== 'NONE')    mlScore += 6
+  if (smc.bos !== 'NONE')     mlScore += 10
+  if (smc.choch !== 'NONE')   mlScore += 8
+  if (smc.equalHL)            mlScore += 5
+  if (smc.liquiditySwept)     mlScore += 10
+  if (smc.displacement)       mlScore += 5
+  if (smc.premium || smc.discount) mlScore += 4
+  if (ltf.pattern !== 'No clear pattern') mlScore += 6
+  // HTF SMC alignment
   if ((htfBullish && (ltfBullish || smc.bos === 'BULLISH')) ||
-      (htfBearish && (ltfBearish || smc.bos === 'BEARISH'))) mlScore += 20
-  else if (htfNeutral) mlScore += 8
-  if ((ltfBullish && rsiBuyZone)    || (ltfBearish && rsiSellZone))    mlScore += 8
-  if ((ltfBullish && rsiExtremeBuy) || (ltfBearish && rsiExtremeSell)) mlScore += 6
+      (htfBearish && (ltfBearish || smc.bos === 'BEARISH'))) mlScore += 18
+  else if (htfNeutral) mlScore += 6
+  if ((ltfBullish && rsiBuyZone)    || (ltfBearish && rsiSellZone))    mlScore += 5
   mlScore = Math.min(100, mlScore)
 
   const htfAligned = (htfBullish && (ltfBullish || smc.bos === 'BULLISH')) ||
                      (htfBearish && (ltfBearish || smc.bos === 'BEARISH'))
-  const threshold = htfAligned ? 50 : htfNeutral ? 50 : 70
+  const threshold = htfAligned ? 50 : htfNeutral ? 55 : 70
 
   let direction = 'NO SIGNAL'
-  const buySetup  = (ltfBullish || smc.bos === 'BULLISH') && pullbackScore >= 35 && mlScore >= threshold
-  const sellSetup = (ltfBearish || smc.bos === 'BEARISH') && pullbackScore >= 35 && mlScore >= threshold
+  const buySetup  = (ltfBullish || smc.bos === 'BULLISH'  || smc.choch === 'BULLISH CHoCH') && pullbackScore >= 35 && mlScore >= threshold
+  const sellSetup = (ltfBearish || smc.bos === 'BEARISH'  || smc.choch === 'BEARISH CHoCH') && pullbackScore >= 35 && mlScore >= threshold
   if (buySetup)  direction = 'BUY'
   if (sellSetup) direction = 'SELL'
   if (buySetup && sellSetup) direction = htfBullish ? 'BUY' : htfBearish ? 'SELL' : 'NO SIGNAL'
@@ -292,14 +297,14 @@ function computeCore(cleanSymbol, interval, htfInterval, ltfData, htfData) {
 
   const result = buildFallback({
     cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore,
-    htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc
+    htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc, htfSmc
   })
   result.scoreBreakdown = breakdown
   result.reasoningTrace = breakdown
     .filter(b => !direction || direction === 'NO SIGNAL' || b.side === direction)
     .map(b => `+${b.pts}: ${b.label}`)
 
-  return { result, ltf, htf, smc, atr, price, sl, tp1, tp2, tp3, dp,
+  return { result, ltf, htf, smc, htfSmc, atr, price, sl, tp1, tp2, tp3, dp,
            direction, mlScore, pullbackScore, htfTrend, htfInterval, cleanSymbol }
 }
 
@@ -396,7 +401,7 @@ DATA:
 Symbol: ${cleanSymbol} | Direction: ${direction} | HTF: ${htfTrend} on ${htfInterval}
 Price: ${price} | SL: ${sl} | TP1: ${tp1} | TP2: ${tp2} | TP3: ${tp3}
 Pattern: ${ltf.pattern} | RSI: ${ltf.rsi?.toFixed(1)} | ATR: ${atr?.toFixed(dp)}
-SMA8: ${ltf.sma8?.toFixed(dp)} | SMA20: ${ltf.sma20?.toFixed(dp)} | SMA50: ${ltf.sma50?.toFixed(dp)}
+Structure: ${smc.structureBias} | Premium/Discount: ${smc.premium ? 'Premium' : smc.discount ? 'Discount' : 'Equilibrium'}
 OB: ${smc.bullishOB ? 'Bullish at '+smc.bullishOBLevel?.toFixed(dp) : smc.bearishOB ? 'Bearish at '+smc.bearishOBLevel?.toFixed(dp) : 'None'}
 FVG: ${smc.fvg} | IFVG: ${smc.ifvg} | BOS: ${smc.bos} | CHoCH: ${smc.choch}
 Liquidity: ${smc.liquiditySwept || 'None'} | EQH/EQL: ${smc.equalHL || 'None'} | Displacement: ${smc.displacement || 'None'}
@@ -491,8 +496,8 @@ function backtestSimilarSetups(candles, core) {
     const slice = candles.slice(0, i + 1)
     const ind = calcIndicators(slice); if (!ind) continue
     const smc = calcSMC(slice)
-    const bull = ind.latestClose > ind.sma20 && ind.sma8 > ind.sma20
-    const bear = ind.latestClose < ind.sma20 && ind.sma8 < ind.sma20
+    const bull = smc.structureBias === 'BULLISH'
+    const bear = smc.structureBias === 'BEARISH'
 
     const matches = dir === 'BUY'
       ? (bull && (smc.bullishOB || smc.fvg === 'BULLISH' || smc.bos === 'BULLISH'))
@@ -619,16 +624,10 @@ function calcIndicators(candles) {
     return 'No clear pattern'
   }
 
-  const sma8  = sma(closes, 8)
-  const sma20 = sma(closes, 20)
-  const sma50 = sma(closes, 50)
-  const r14   = rsi(closes, 14)
+  const r14 = rsi(closes, 14)
 
   return {
     latestClose: closes[n - 1],
-    sma8:  sma8?.[n - 1]  ?? null,
-    sma20: sma20?.[n - 1] ?? null,
-    sma50: sma50?.[n - 1] ?? null,
     rsi:   r14?.[n - 1]   ?? 50,
     atr:   atrCalc(highs, lows, closes, 14),
     sr:    sr(),
@@ -644,7 +643,7 @@ function calcSMC(candles) {
     bullishOB:false, bearishOB:false, bullishOBLevel:null, bearishOBLevel:null,
     obMitigated:null, fvg:'NONE', fvgHigh:null, fvgLow:null, ifvg:'NONE',
     bos:'NONE', choch:'NONE', premium:false, discount:false,
-    liquiditySwept:null, equalHL:null, displacement:null
+    liquiditySwept:null, equalHL:null, displacement:null, structureBias:'NEUTRAL'
   }
   if (!candles || candles.length < 25) return empty
 
@@ -741,22 +740,36 @@ function calcSMC(candles) {
     out.displacement = candles[n - 1].close > candles[n - 1].open ? 'BULLISH' : 'BEARISH'
   }
 
+  // ── Structure bias (composite of BOS, CHoCH, swing trend, displacement) ──
+  let bull = 0, bear = 0
+  if (out.bos === 'BULLISH') bull += 2
+  if (out.bos === 'BEARISH') bear += 2
+  if (out.choch === 'BULLISH CHoCH') bull += 2
+  if (out.choch === 'BEARISH CHoCH') bear += 2
+  if (out.displacement === 'BULLISH') bull += 1
+  if (out.displacement === 'BEARISH') bear += 1
+  if (out.liquiditySwept === 'BUYSIDE_RECLAIMED') bull += 1
+  if (out.liquiditySwept === 'SELLSIDE_RECLAIMED') bear += 1
+  // swing slope: last close vs close 10 bars back
+  if (n >= 11) {
+    const slope = candles[n - 1].close - candles[n - 11].close
+    if (slope > 0) bull += 1; else if (slope < 0) bear += 1
+  }
+  out.structureBias = bull > bear + 1 ? 'BULLISH' : bear > bull + 1 ? 'BEARISH' : 'NEUTRAL'
+
   return out
 }
-
 // ═══════════════════════════════════════════════════════════════════════
-//  Fallback narrative
-// ═══════════════════════════════════════════════════════════════════════
-function buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc }) {
+function buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc, htfSmc }) {
   return {
     pair: cleanSymbol, timeframe: interval, htfTimeframe: htfInterval,
     currentPrice: String(price), direction,
     setupName: `HTF ${htfTrend} + ${smc?.bullishOB || smc?.bearishOB ? 'OB' : 'Mean Reversion'} + ${ltf.pattern}`,
     mlScore, pullbackScore, htfTrend,
-    htfAnalysis: `${htfInterval} trend is ${htfTrend}. SMA20=${htf.sma20?.toFixed(dp)} SMA50=${htf.sma50?.toFixed(dp)}.`,
+    htfAnalysis: `${htfInterval} structure is ${htfTrend} (BOS: ${htfSmc?.bos || 'NONE'}, CHoCH: ${htfSmc?.choch || 'NONE'}).`,
     trendDirection: htfTrend === 'BULLISH' ? 'Bullish' : htfTrend === 'BEARISH' ? 'Bearish' : 'Neutral',
     trendStrength: mlScore >= 70 ? 'STRONG' : mlScore >= 50 ? 'MODERATE' : 'WEAK',
-    meanReversionZone: `SMA 20 at ${ltf.sma20?.toFixed(dp)}`,
+    meanReversionZone: smc?.bullishOB ? `Bullish OB ${smc.bullishOBLevel?.toFixed(dp)}` : smc?.bearishOB ? `Bearish OB ${smc.bearishOBLevel?.toFixed(dp)}` : (smc?.premium ? 'Premium zone' : smc?.discount ? 'Discount zone' : 'Equilibrium'),
     rsiReading: `RSI ${ltf.rsi?.toFixed(1)}`,
     candlePattern: ltf.pattern,
     smcOrderBlock: smc?.bullishOB ? `Bullish OB at ${smc.bullishOBLevel?.toFixed(dp)}` : smc?.bearishOB ? `Bearish OB at ${smc.bearishOBLevel?.toFixed(dp)}` : 'None detected',
@@ -774,9 +787,9 @@ function buildFallback({ cleanSymbol, interval, htfInterval, price, direction, m
     riskReward: '1:3.3',
     sentiment: htfTrend === 'BULLISH' ? 'Bullish' : htfTrend === 'BEARISH' ? 'Bearish' : 'Neutral',
     sentimentScore: mlScore,
-    priceAction: `${ltf.pattern} at ${price}. ${smc?.bullishOB ? 'Bullish OB confluence.' : smc?.bearishOB ? 'Bearish OB confluence.' : 'Near SMA20.'}`,
+    priceAction: `${ltf.pattern} at ${price}. ${smc?.bullishOB ? 'Bullish OB confluence.' : smc?.bearishOB ? 'Bearish OB confluence.' : smc?.liquiditySwept ? `Liquidity sweep (${smc.liquiditySwept}).` : 'No clean SMC trigger.'}`,
     supportResistance: `Support: ${ltf.sr.supports.map(s=>s.toFixed(dp)).join(', ')||'none'}. Resistance: ${ltf.sr.resistances.map(r=>r.toFixed(dp)).join(', ')||'none'}.`,
-    technicalIndicators: `SMA8=${ltf.sma8?.toFixed(dp)} SMA20=${ltf.sma20?.toFixed(dp)} RSI=${ltf.rsi?.toFixed(1)} ATR=${ltf.atr?.toFixed(dp)}. FVG: ${smc?.fvg}. BOS: ${smc?.bos}.`,
+    technicalIndicators: `Structure: ${smc?.structureBias}. BOS: ${smc?.bos}. CHoCH: ${smc?.choch}. FVG: ${smc?.fvg}. IFVG: ${smc?.ifvg}. RSI=${ltf.rsi?.toFixed(1)} ATR=${ltf.atr?.toFixed(dp)}.`,
     marketSentiment: `HTF ${htfInterval} is ${htfTrend}. SMC zone: ${smc?.premium ? 'Premium' : smc?.discount ? 'Discount' : 'Equilibrium'}. ML Score ${mlScore}/100.`,
     summary: `${direction} on ${cleanSymbol}. Entry=${price} SL=${sl} TP1=${tp1}. OB: ${smc?.bullishOB || smc?.bearishOB ? 'confirmed' : 'none'}. ML=${mlScore}/100.`,
     tags: [htfTrend, ltf.pattern.split(' ')[0], smc?.bos !== 'NONE' ? smc?.bos + ' BOS' : 'No BOS', direction === 'NO SIGNAL' ? 'Waiting' : direction]
