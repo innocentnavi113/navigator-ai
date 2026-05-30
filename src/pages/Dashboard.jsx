@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { useAlerts } from '../useAlerts'
 import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
+import ForexChat from '../components/ForexChat'
 import styles from './Dashboard.module.css'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
@@ -767,6 +768,8 @@ export default function Dashboard({ session }) {
       <div className={styles.bottomNav}>
         <div className={styles.navDisclaimer}>Use this analysis to inform your own decisions</div>
       </div>
+
+      <ForexChat />
     </div>
   )
 }
