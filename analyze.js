@@ -2,7 +2,7 @@
 // Drop-in replacement. Same endpoint, same two modes.
 //
 // What's new vs the original:
-//   • Image mode: maintained OpenRouter vision models only, stricter JSON schema, retry on parse fail
+//   • Image mode: restored old Gemini fallback model, stricter JSON schema, retry on parse fail
 //   • SMC: liquidity sweeps, equal highs/lows, inverse FVG (IFVG), OB mitigation, displacement candles
 //   • Live mode supports SSE streaming via ?stream=1 OR Accept: text/event-stream
 //       events: "instant" → computed result | "news" → headlines+score | "backtest" → win-rate | "ai" → polished text | "done"
@@ -138,10 +138,10 @@ async function analyzeImage({ imageBase64, imageType, customPrompt }, res) {
     const dataUrl = `data:${imageType};base64,${imageBase64}`
     const prompt = customPrompt || IMAGE_PROMPT
 
-    // Maintained OpenRouter vision models only. Do NOT use deprecated google/gemini-2.0-flash-001.
+    // Restored old fallback model as requested.
     const tiers = [
       { model: 'google/gemini-2.5-pro', timeout: 35000 },
-      { model: 'google/gemini-2.5-flash', timeout: 25000 }
+      { model: 'google/gemini-2.0-flash-001', timeout: 25000 }
     ]
 
     let last
