@@ -77,7 +77,7 @@ Be extremely precise with price levels — read them directly from the chart. If
         'X-Title': 'Navigator AI Chart Scanner'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-001',
+        model: 'google/gemini-2.5-flash-preview-05-20',
         max_tokens: 2000,
         messages: [
           {
