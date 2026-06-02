@@ -138,10 +138,11 @@ async function analyzeImage({ imageBase64, imageType, customPrompt }, res) {
     const dataUrl = `data:${imageType};base64,${imageBase64}`
     const prompt = customPrompt || IMAGE_PROMPT
 
-    // Restored old fallback model as requested.
+    // Vision-capable models available on OpenRouter (June 2026)
     const tiers = [
-      { model: 'google/gemini-2.5-pro', timeout: 35000 },
-      { model: 'google/gemini-2.0-flash-001', timeout: 25000 }
+      { model: 'google/gemini-2.5-flash-preview-05-20', timeout: 25000 },
+      { model: 'google/gemini-2.0-flash-exp:free',      timeout: 25000 },
+      { model: 'meta-llama/llama-4-maverick:free',       timeout: 25000 },
     ]
 
     let last
