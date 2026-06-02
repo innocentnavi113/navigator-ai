@@ -84,7 +84,7 @@ Classical TA Framework — identify:
           'X-Title': 'Navigator AI'
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash-preview-05-20',
+          model: 'google/gemini-2.5-flash',
           max_tokens: 1500,
           messages: [{
             role: 'user',
@@ -264,7 +264,7 @@ Reply with ONLY this JSON. Keep ALL string values SHORT (max 100 chars). No mark
         'X-Title': 'Navigator AI'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-preview-05-20',
+        model: 'google/gemini-2.5-flash',
         max_tokens: 1000,
         messages: [{ role: 'user', content: aiPrompt }]
       })
