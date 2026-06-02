@@ -1,597 +1,367 @@
-// api/analyze.js — UPGRADED
-// Drop-in replacement. Same endpoint, same two modes.
-//
-// What's new vs the original:
-//   • Image mode: restored old Gemini fallback model, stricter JSON schema, retry on parse fail
-//   • SMC: liquidity sweeps, equal highs/lows, inverse FVG (IFVG), OB mitigation, displacement candles
-//   • Live mode supports SSE streaming via ?stream=1 OR Accept: text/event-stream
-//       events: "instant" → computed result | "news" → headlines+score | "backtest" → win-rate | "ai" → polished text | "done"
-//   • Recent setup backtest (last ~200 candles, win-rate of similar setups)
-//   • Optional news/sentiment fusion (auto-on if NEWSAPI_KEY or CRYPTOPANIC_KEY present)
-//   • Confidence breakdown: every score factor returned in `result.scoreBreakdown` with a reasoning trace
-//
-// Required env: OPENROUTER_API_KEY, TWELVEDATA_API_KEY
-// Optional env: NEWSAPI_KEY (newsapi.org), CRYPTOPANIC_KEY (cryptopanic.com)
+// api/analyze.js
+// Handles two modes:
+// 1. Chart image analysis (imageBase64 + imageType provided)
+// 2. Live market scanner (symbol + interval provided)
 
-export const config = { maxDuration: 60 }
-
-// ───────────────────── cache ─────────────────────
-const candleCache = new Map()
-const newsCache = new Map()
-const CANDLE_TTL = 60_000
-const NEWS_TTL = 5 * 60_000
-
-function cacheGet(map, key, ttl) {
-  const e = map.get(key); if (!e) return null
-  if (Date.now() - e.ts > ttl) { map.delete(key); return null }
-  return e.data
-}
-function cacheSet(map, key, data) { map.set(key, { data, ts: Date.now() }) }
-
-// ───────────────────── fetch util ─────────────────────
-async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), timeoutMs)
-  try { const r = await fetch(url, { ...options, signal: ctrl.signal }); clearTimeout(t); return r }
-  catch (e) { clearTimeout(t); throw e }
-}
-
-// ───────────────────── handler ─────────────────────
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { symbol, interval, imageBase64, imageType, prompt: customPrompt } = req.body || {}
-  const wantStream =
-    req.query?.stream === '1' ||
-    (req.headers['accept'] || '').includes('text/event-stream')
+  const { symbol, interval, imageBase64, imageType, prompt: customPrompt } = req.body
 
-  if (!process.env.OPENROUTER_API_KEY) return res.status(500).json({ error: 'OPENROUTER_API_KEY is not set' })
+  if (!process.env.OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: 'OPENROUTER_API_KEY is not set' })
+  }
 
-  // ── MODE 1: Chart image ────────────────────────────────────────────────
-  if (imageBase64 && imageType) return analyzeImage({ imageBase64, imageType, customPrompt }, res)
+  // ── MODE 1: Chart image analysis ─────────────────────────────────────
+  if (imageBase64 && imageType) {
+    try {
+      const prompt = customPrompt || `You are an elite institutional trading analyst specializing in Smart Money Concepts (SMC) and Classical Technical Analysis. Analyze this trading chart screenshot with maximum precision.
 
-  // ── MODE 2: Live scanner ───────────────────────────────────────────────
-  if (!symbol || !interval) return res.status(400).json({ error: 'Missing symbol or interval (or imageBase64 for chart mode)' })
-  if (!process.env.TWELVEDATA_API_KEY) return res.status(500).json({ error: 'TWELVEDATA_API_KEY is not set' })
+You MUST respond with ONLY a JSON object. No text before or after. No markdown. No explanation. Just the raw JSON starting with { and ending with }.
 
-  return wantStream
-    ? runLiveScanStreaming(symbol, interval, res)
-    : runLiveScan(symbol, interval, res)
-}
+Analyze using BOTH SMC and Classical TA frameworks:
 
-// ═══════════════════════════════════════════════════════════════════════
-//  IMAGE MODE
-// ═══════════════════════════════════════════════════════════════════════
-const IMAGE_PROMPT = `You are an elite institutional trading analyst (SMC + Classical TA). Analyze this chart with maximum precision.
+SMC Framework — identify:
+- Order Blocks (OB): Last bullish/bearish candle before a strong move
+- Fair Value Gaps (FVG): 3-candle imbalance zones
+- Break of Structure (BOS): Higher high/lower low confirmation
+- Change of Character (CHoCH): First sign of trend reversal
+- Liquidity sweeps: Equal highs/lows that got swept
+- Premium/Discount zones: Above/below 50% of the range
+- Inducement levels: Obvious levels set to trap retail
 
-Respond with ONLY a raw JSON object — no prose, no markdown, no code fences. Start with { and end with }.
+Classical TA Framework — identify:
+- Candlestick patterns: Engulfing, Pin Bar, Doji, Hammer, Shooting Star, Marubozu, Inside Bar, Morning/Evening Star, Harami
+- Chart patterns: Head & Shoulders, Double Top/Bottom, Triangle, Wedge, Flag, Cup & Handle
+- Key S/R levels from swing highs/lows
+- Moving average positions if visible
+- RSI/MACD divergence if visible
+- Trend lines and channels
 
-Detect: candle patterns (Engulfing, Pin, Doji, Marubozu, Inside Bar, Star, Hammer), chart patterns (H&S, Double Top/Bottom, Triangle, Wedge, Flag, Cup&Handle), trend lines, MAs/RSI/MACD if visible. SMC: Order Blocks, FVG, Inverse FVG (IFVG), BOS, CHoCH, liquidity sweeps, equal highs/lows, displacement, premium/discount, inducement.
-
-Schema (use exactly these keys):
 {
-  "pair": "exact instrument label from chart",
-  "timeframe": "detected TF",
-  "direction": "BUY" | "SELL" | "NO SIGNAL",
-  "sentiment": "Strongly Bullish" | "Bullish" | "Neutral" | "Bearish" | "Strongly Bearish",
-  "sentimentScore": 0-100,
-  "entryPrice": "price",
-  "stopLoss": "price",
-  "takeProfit1": "price", "takeProfit2": "price", "takeProfit3": "price",
-  "riskReward": "1:X.X",
+  "pair": "READ exact instrument name from chart label. Do not guess.",
+  "timeframe": "detected timeframe e.g. H1",
+  "direction": "BUY or SELL or NO SIGNAL",
+  "sentiment": "Bullish or Bearish or Neutral or Strongly Bullish or Strongly Bearish",
+  "sentimentScore": 75,
+  "entryPrice": "exact price level from chart",
+  "stopLoss": "exact price level - place below OB or swing low for BUY, above OB or swing high for SELL",
+  "takeProfit1": "first target - nearest liquidity or FVG fill",
+  "takeProfit2": "second target - next significant level",
+  "takeProfit3": "third target - major structural level",
+  "riskReward": "e.g. 1:2.5",
   "smcAnalysis": {
-    "orderBlock": "...", "fvg": "...", "ifvg": "...", "bos": "...", "choch": "...",
-    "liquiditySweep": "...", "equalHighsLows": "...", "displacement": "...",
-    "premiumDiscount": "...", "inducement": "..."
+    "orderBlock": "describe the key order block level and direction",
+    "fvg": "describe any fair value gap present",
+    "bos": "describe last break of structure",
+    "choch": "describe change of character if present or none",
+    "liquiditySweep": "describe any liquidity sweep visible",
+    "premiumDiscount": "is price in premium or discount zone",
+    "inducement": "any inducement levels visible"
   },
   "classicalAnalysis": {
-    "candlePattern": "...", "chartPattern": "...", "trendStructure": "...",
-    "keyLevels": "...", "indicators": "..."
+    "candlePattern": "specific candlestick pattern detected",
+    "chartPattern": "chart pattern if any e.g. Double Bottom or none",
+    "trendStructure": "describe the trend structure",
+    "keyLevels": "describe key S/R levels",
+    "indicators": "describe any visible indicators"
   },
-  "confluenceFactors": ["...", "...", "..."],
-  "priceAction": "2-3 sentences",
-  "supportResistance": "2-3 sentences",
-  "technicalIndicators": "2-3 sentences",
-  "marketSentiment": "2-3 sentences",
-  "summary": "3-4 sentence trade plan",
-  "tags": ["tag","tag","tag","tag"]
+  "confluenceFactors": ["factor1", "factor2", "factor3"],
+  "priceAction": "2-3 sentences combining SMC and classical price action",
+  "supportResistance": "2-3 sentences on key levels from both frameworks",
+  "technicalIndicators": "2-3 sentences on visible indicators and SMC zones",
+  "marketSentiment": "2-3 sentences on overall bias from both SMC and classical",
+  "summary": "3-4 sentences comprehensive recommendation combining both frameworks",
+  "tags": ["tag1", "tag2", "tag3", "tag4"]
 }`
 
-async function callORChat(body, timeoutMs = 30000) {
-  return fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
-      'X-Title': 'Navigator AI'
-    },
-    body: JSON.stringify(body)
-  }, timeoutMs)
-}
+      const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+          'X-Title': 'Navigator AI'
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash-preview-05-20',
+          max_tokens: 1500,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${imageType};base64,${imageBase64}` } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        })
+      })
 
-function extractJSON(text) {
-  if (!text) return null
-  const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim()
-  const m = cleaned.match(/\{[\s\S]*\}/)
-  if (!m) return null
-  try { return JSON.parse(m[0]) } catch { return null }
-}
+      const aiData = await aiRes.json()
+      if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
 
-async function tryImageModel(model, dataUrl, prompt, timeoutMs) {
-  const res = await callORChat({
-    model, max_tokens: 2200, temperature: 0.2,
-    messages: [{ role: 'user', content: [
-      { type: 'image_url', image_url: { url: dataUrl } },
-      { type: 'text', text: prompt }
-    ]}]
-  }, timeoutMs)
-  if (!res.ok) return { ok: false, status: res.status, error: (await res.text()).slice(0, 300) }
-  const data = await res.json()
-  const text = data.choices?.[0]?.message?.content || ''
-  const json = extractJSON(text)
-  return json ? { ok: true, json } : { ok: false, status: 200, error: `Bad JSON: "${text.slice(0, 200)}"` }
-}
+      let text = aiData.choices?.[0]?.message?.content || ''
+      text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) return res.status(500).json({ error: `Model returned unexpected content: "${text.slice(0, 200)}"` })
 
-async function analyzeImage({ imageBase64, imageType, customPrompt }, res) {
-  try {
-    const dataUrl = `data:${imageType};base64,${imageBase64}`
-    const prompt = customPrompt || IMAGE_PROMPT
+      let result
+      try { result = JSON.parse(jsonMatch[0]) }
+      catch (e) { return res.status(500).json({ error: 'Failed to parse AI response as JSON' }) }
 
-    // Vision-capable models available on OpenRouter (June 2026)
-    const tiers = [
-{ model: 'google/gemini-2.5-flash-preview-05-20', timeout: 25000 },
-{ model: 'google/gemini-2.0-flash-exp:free', timeout: 25000 },
-{ model: 'meta-llama/llama-4-maverick:free', timeout: 25000 },
-    ]
+      return res.status(200).json({ result })
 
-    let last
-    for (const t of tiers) {
-      try {
-        last = await tryImageModel(t.model, dataUrl, prompt, t.timeout)
-        if (last.ok) return res.status(200).json({ result: last.json, model: t.model })
-        // hard-stop on auth/quota
-        if (last.status === 401 || last.status === 402) break
-      } catch (e) { last = { ok: false, status: 504, error: e.message } }
+    } catch (err) {
+      return res.status(500).json({ error: err.message || 'Chart analysis failed' })
     }
-    return res.status(502).json({ error: last?.error || 'All vision models failed' })
-  } catch (err) {
-    if (err.name === 'AbortError') return res.status(504).json({ error: 'Chart analysis timed out.' })
-    return res.status(500).json({ error: err.message || 'Chart analysis failed' })
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  LIVE SCAN (shared core)
-// ═══════════════════════════════════════════════════════════════════════
-const HTF_MAP = {
-  '1min':'5min','5min':'15min','15min':'1h','30min':'1h',
-  '1h':'4h','2h':'4h','4h':'1day','1day':'1week'
-}
-
-async function loadCandles(cleanSymbol, interval) {
-  const htfInterval = HTF_MAP[interval] || '4h'
-  const ltfKey = `${cleanSymbol}:${interval}`
-  const htfKey = `${cleanSymbol}:${htfInterval}`
-  let ltfData = cacheGet(candleCache, ltfKey, CANDLE_TTL)
-  let htfData = cacheGet(candleCache, htfKey, CANDLE_TTL)
-  if (!ltfData || !htfData) {
-    const [a, b] = await Promise.all([
-      ltfData ? Promise.resolve(ltfData) : fetchCandles(cleanSymbol, interval, 200),
-      htfData ? Promise.resolve(htfData) : fetchCandles(cleanSymbol, htfInterval, 100)
-    ])
-    ltfData = a; htfData = b
-    if (!ltfData.error) cacheSet(candleCache, ltfKey, ltfData)
-    if (!htfData.error) cacheSet(candleCache, htfKey, htfData)
-  }
-  return { ltfData, htfData, htfInterval }
-}
-
-function computeCore(cleanSymbol, interval, htfInterval, ltfData, htfData) {
-  const ltf = calcIndicators(ltfData.candles)
-  const htf = calcIndicators(htfData.candles)
-  if (!ltf || !htf) throw new Error('Not enough candle data')
-
-  // ── Pure SMC bias (HTF + LTF) — no SMAs ──
-  const htfSmc = calcSMC(htfData.candles)
-  const smc    = calcSMC(ltfData.candles)
-
-  const htfBullish = htfSmc.structureBias === 'BULLISH'
-  const htfBearish = htfSmc.structureBias === 'BEARISH'
-  const htfNeutral = !htfBullish && !htfBearish
-  const htfTrend   = htfBullish ? 'BULLISH' : htfBearish ? 'BEARISH' : 'NEUTRAL'
-
-  const ltfBullish = smc.structureBias === 'BULLISH'
-  const ltfBearish = smc.structureBias === 'BEARISH'
-  const rsiBuyZone     = ltf.rsi >= 30 && ltf.rsi <= 55
-  const rsiSellZone    = ltf.rsi >= 45 && ltf.rsi <= 70
-  const rsiExtremeBuy  = ltf.rsi < 35
-  const rsiExtremeSell = ltf.rsi > 65
-
-  // Score with full reasoning trace
-  const breakdown = []
-  const add = (label, pts, side) => { if (pts) breakdown.push({ label, pts, side }) }
-
-  let pullbackScore = 0
-  if (ltfBullish || smc.bos === 'BULLISH' || smc.choch === 'BULLISH CHoCH') {
-    if (smc.bullishOB)                                { pullbackScore += 22; add(`Bullish OB @ ${smc.bullishOBLevel}`, 22, 'BUY') }
-    if (smc.obMitigated === 'BULLISH_OB_MITIGATED')   { pullbackScore += 12; add('Bullish OB mitigated', 12, 'BUY') }
-    if (smc.liquiditySwept === 'BUYSIDE_RECLAIMED')   { pullbackScore += 18; add('Sell-side liquidity sweep + reclaim', 18, 'BUY') }
-    if (smc.fvg === 'BULLISH')                        { pullbackScore += 12; add('Bullish FVG', 12, 'BUY') }
-    if (smc.ifvg === 'BULLISH_RECLAIM')               { pullbackScore += 10; add('Bullish IFVG reclaim', 10, 'BUY') }
-    if (smc.bos === 'BULLISH')                        { pullbackScore += 12; add('Bullish BOS', 12, 'BUY') }
-    if (smc.choch === 'BULLISH CHoCH')                { pullbackScore += 10; add('Bullish CHoCH', 10, 'BUY') }
-    if (smc.discount)                                 { pullbackScore += 10; add('In discount zone', 10, 'BUY') }
-    if (smc.equalHL === 'EQUAL_HIGHS')                { pullbackScore += 6;  add('Equal highs above (target)', 6, 'BUY') }
-    if (smc.displacement === 'BULLISH')               { pullbackScore += 8;  add('Bullish displacement', 8, 'BUY') }
-    if (rsiBuyZone || rsiExtremeBuy)                  { pullbackScore += 10; add(`RSI buy zone (${ltf.rsi.toFixed(1)})`, 10, 'BUY') }
-    if (/Bull|Pin|Hammer|Engulf/i.test(ltf.pattern))  { pullbackScore += 10; add(`Pattern: ${ltf.pattern}`, 10, 'BUY') }
-    if (ltf.sr.supports.length > 0)                   { pullbackScore += 6;  add('Support nearby', 6, 'BUY') }
-  }
-  if (ltfBearish || smc.bos === 'BEARISH' || smc.choch === 'BEARISH CHoCH') {
-    if (smc.bearishOB)                                { pullbackScore += 22; add(`Bearish OB @ ${smc.bearishOBLevel}`, 22, 'SELL') }
-    if (smc.obMitigated === 'BEARISH_OB_MITIGATED')   { pullbackScore += 12; add('Bearish OB mitigated', 12, 'SELL') }
-    if (smc.liquiditySwept === 'SELLSIDE_RECLAIMED')  { pullbackScore += 18; add('Buy-side liquidity sweep + reclaim', 18, 'SELL') }
-    if (smc.fvg === 'BEARISH')                        { pullbackScore += 12; add('Bearish FVG', 12, 'SELL') }
-    if (smc.ifvg === 'BEARISH_RECLAIM')               { pullbackScore += 10; add('Bearish IFVG reclaim', 10, 'SELL') }
-    if (smc.bos === 'BEARISH')                        { pullbackScore += 12; add('Bearish BOS', 12, 'SELL') }
-    if (smc.choch === 'BEARISH CHoCH')                { pullbackScore += 10; add('Bearish CHoCH', 10, 'SELL') }
-    if (smc.premium)                                  { pullbackScore += 10; add('In premium zone', 10, 'SELL') }
-    if (smc.equalHL === 'EQUAL_LOWS')                 { pullbackScore += 6;  add('Equal lows below (target)', 6, 'SELL') }
-    if (smc.displacement === 'BEARISH')               { pullbackScore += 8;  add('Bearish displacement', 8, 'SELL') }
-    if (rsiSellZone || rsiExtremeSell)                { pullbackScore += 10; add(`RSI sell zone (${ltf.rsi.toFixed(1)})`, 10, 'SELL') }
-    if (/Bear|Shooting|Marubozu|Engulf/i.test(ltf.pattern)) { pullbackScore += 10; add(`Pattern: ${ltf.pattern}`, 10, 'SELL') }
-    if (ltf.sr.resistances.length > 0)                { pullbackScore += 6;  add('Resistance nearby', 6, 'SELL') }
   }
 
-  // ML score: pure SMC weighting
-  let mlScore = 0
-  mlScore += Math.round(pullbackScore * 0.45)
-  if (smc.bullishOB || smc.bearishOB) mlScore += 14
-  if (smc.obMitigated)        mlScore += 6
-  if (smc.fvg !== 'NONE')     mlScore += 8
-  if (smc.ifvg !== 'NONE')    mlScore += 6
-  if (smc.bos !== 'NONE')     mlScore += 10
-  if (smc.choch !== 'NONE')   mlScore += 8
-  if (smc.equalHL)            mlScore += 5
-  if (smc.liquiditySwept)     mlScore += 10
-  if (smc.displacement)       mlScore += 5
-  if (smc.premium || smc.discount) mlScore += 4
-  if (ltf.pattern !== 'No clear pattern') mlScore += 6
-  // HTF SMC alignment
-  if ((htfBullish && (ltfBullish || smc.bos === 'BULLISH')) ||
-      (htfBearish && (ltfBearish || smc.bos === 'BEARISH'))) mlScore += 18
-  else if (htfNeutral) mlScore += 6
-  if ((ltfBullish && rsiBuyZone)    || (ltfBearish && rsiSellZone))    mlScore += 5
-  mlScore = Math.min(100, mlScore)
+  // ── MODE 2: Live market scanner ────────────────────────────────────────
+  if (!symbol || !interval) {
+    return res.status(400).json({ error: 'Missing symbol or interval (or imageBase64 for chart mode)' })
+  }
 
-  const htfAligned = (htfBullish && (ltfBullish || smc.bos === 'BULLISH')) ||
-                     (htfBearish && (ltfBearish || smc.bos === 'BEARISH'))
-  const threshold = htfAligned ? 50 : htfNeutral ? 55 : 70
+  if (!process.env.TWELVEDATA_API_KEY) {
+    return res.status(500).json({ error: 'TWELVEDATA_API_KEY is not set' })
+  }
 
-  let direction = 'NO SIGNAL'
-  const buySetup  = (ltfBullish || smc.bos === 'BULLISH'  || smc.choch === 'BULLISH CHoCH') && pullbackScore >= 35 && mlScore >= threshold
-  const sellSetup = (ltfBearish || smc.bos === 'BEARISH'  || smc.choch === 'BEARISH CHoCH') && pullbackScore >= 35 && mlScore >= threshold
-  if (buySetup)  direction = 'BUY'
-  if (sellSetup) direction = 'SELL'
-  if (buySetup && sellSetup) direction = htfBullish ? 'BUY' : htfBearish ? 'SELL' : 'NO SIGNAL'
+  const htfMap = {
+    '1min': '15min', '5min': '1h', '15min': '4h', '30min': '4h',
+    '1h': '1day', '2h': '1day', '4h': '1week', '1day': '1month'
+  }
+  const htfInterval = htfMap[interval] || '1day'
 
-  const dp    = ltf.latestClose < 10 ? 5 : ltf.latestClose < 1000 ? 4 : 2
-  const atr   = ltf.atr
-  const price = ltf.latestClose
-
-  const buySL  = (smc.bullishOBLevel && direction === 'BUY')
-    ? (smc.bullishOBLevel - atr * 0.5).toFixed(dp) : (price - atr * 1.5).toFixed(dp)
-  const sellSL = (smc.bearishOBLevel && direction === 'SELL')
-    ? (smc.bearishOBLevel + atr * 0.5).toFixed(dp) : (price + atr * 1.5).toFixed(dp)
-  const buyTP1  = smc.fvgHigh ? smc.fvgHigh.toFixed(dp) : (price + atr * 2.0).toFixed(dp)
-  const buyTP2  = (price + atr * 3.5).toFixed(dp)
-  const buyTP3  = (price + atr * 5.0).toFixed(dp)
-  const sellTP1 = smc.fvgLow  ? smc.fvgLow.toFixed(dp)  : (price - atr * 2.0).toFixed(dp)
-  const sellTP2 = (price - atr * 3.5).toFixed(dp)
-  const sellTP3 = (price - atr * 5.0).toFixed(dp)
-  const sl  = direction === 'BUY' ? buySL  : sellSL
-  const tp1 = direction === 'BUY' ? buyTP1 : sellTP1
-  const tp2 = direction === 'BUY' ? buyTP2 : sellTP2
-  const tp3 = direction === 'BUY' ? buyTP3 : sellTP3
-
-  const result = buildFallback({
-    cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore,
-    htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc, htfSmc
-  })
-  result.scoreBreakdown = breakdown
-  result.reasoningTrace = breakdown
-    .filter(b => !direction || direction === 'NO SIGNAL' || b.side === direction)
-    .map(b => `+${b.pts}: ${b.label}`)
-
-  return { result, ltf, htf, smc, htfSmc, atr, price, sl, tp1, tp2, tp3, dp,
-           direction, mlScore, pullbackScore, htfTrend, htfInterval, cleanSymbol }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  Non-streaming live scan (drop-in compatible)
-// ═══════════════════════════════════════════════════════════════════════
-async function runLiveScan(symbol, interval, res) {
   try {
     const cleanSymbol = symbol.trim().toUpperCase()
-    const { ltfData, htfData, htfInterval } = await loadCandles(cleanSymbol, interval)
+
+    const [ltfData, htfData] = await Promise.all([
+      fetchCandles(cleanSymbol, interval),
+      fetchCandles(cleanSymbol, htfInterval)
+    ])
+
     if (ltfData.error) return res.status(400).json({ error: ltfData.error })
 
-    const core = computeCore(cleanSymbol, interval, htfInterval, ltfData, htfData)
+    const ltf = calcIndicators(ltfData.candles)
+    const htf = calcIndicators(htfData.candles)
 
-    // Backtest hint (synchronous, fast)
-    core.result.backtest = backtestSimilarSetups(ltfData.candles, core)
+    if (!ltf || !htf) return res.status(500).json({ error: 'Not enough candle data' })
 
-    // News fusion (best-effort, parallel with AI polish)
-    const [news, polished] = await Promise.all([
-      fetchNews(cleanSymbol).catch(() => null),
-      polishText(core).catch(() => null)
-    ])
-    if (news) {
-      core.result.news = news
-      // Blend sentiment ±10 into mlScore
-      const blended = clamp(core.result.mlScore + Math.round(news.score * 10), 0, 100)
-      core.result.mlScoreBlended = blended
+    // ── Classical TA signals ──
+    const htfBullish = htf.latestClose > htf.sma50 && htf.sma20 > htf.sma50
+    const htfBearish = htf.latestClose < htf.sma50 && htf.sma20 < htf.sma50
+    const htfTrend   = htfBullish ? 'BULLISH' : htfBearish ? 'BEARISH' : 'NEUTRAL'
+
+    const ltfNearSMA20   = Math.abs(ltf.latestClose - ltf.sma20) / ltf.latestClose < 0.003
+    const ltfBelowSMA20  = ltf.latestClose < ltf.sma20 * 1.002
+    const ltfAboveSMA20  = ltf.latestClose > ltf.sma20 * 0.998
+    const rsiBuyZone     = ltf.rsi >= 30 && ltf.rsi <= 50
+    const rsiSellZone    = ltf.rsi >= 50 && ltf.rsi <= 70
+    const rsiExtremeBuy  = ltf.rsi < 35
+    const rsiExtremeSell = ltf.rsi > 65
+
+    // ── SMC signals ──
+    const smc = calcSMC(ltfData.candles)
+
+    let pullbackScore = 0
+    if (htfBullish) {
+      if (ltfBelowSMA20 || ltfNearSMA20) pullbackScore += 25
+      if (rsiBuyZone || rsiExtremeBuy)   pullbackScore += 20
+      if (ltf.sma8 > ltf.sma20)         pullbackScore += 10
+      if (ltf.pattern.includes('Bull') || ltf.pattern.includes('Pin')) pullbackScore += 15
+      if (ltf.sr.supports.length > 0)   pullbackScore += 10
+      // SMC boosts
+      if (smc.bullishOB)                pullbackScore += 15
+      if (smc.fvg === 'BULLISH')        pullbackScore += 10
+      if (smc.bos === 'BULLISH')        pullbackScore += 10
+      if (smc.discount)                 pullbackScore += 5
     }
-    if (polished) Object.assign(core.result, polished)
+    if (htfBearish) {
+      if (ltfAboveSMA20 || ltfNearSMA20) pullbackScore += 25
+      if (rsiSellZone || rsiExtremeSell) pullbackScore += 20
+      if (ltf.sma8 < ltf.sma20)         pullbackScore += 10
+      if (ltf.pattern.includes('Bear') || ltf.pattern.includes('Shooting')) pullbackScore += 15
+      if (ltf.sr.resistances.length > 0) pullbackScore += 10
+      // SMC boosts
+      if (smc.bearishOB)                pullbackScore += 15
+      if (smc.fvg === 'BEARISH')        pullbackScore += 10
+      if (smc.bos === 'BEARISH')        pullbackScore += 10
+      if (smc.premium)                  pullbackScore += 5
+    }
 
-    return res.status(200).json({ result: core.result })
+    let mlScore = 0
+    if (htfBullish || htfBearish) mlScore += 30
+    mlScore += Math.round(pullbackScore * 0.3)
+    if ((htfBullish && rsiBuyZone)  || (htfBearish && rsiSellZone))     mlScore += 10
+    if ((htfBullish && rsiExtremeBuy) || (htfBearish && rsiExtremeSell)) mlScore += 8
+    if (ltf.pattern !== 'No clear pattern') mlScore += 12
+    // SMC scoring
+    if (smc.bullishOB || smc.bearishOB) mlScore += 12
+    if (smc.fvg !== 'NONE')             mlScore += 8
+    if (smc.bos !== 'NONE')             mlScore += 8
+    if (smc.choch !== 'NONE')           mlScore += 7
+    mlScore = Math.min(100, mlScore)
+
+    let direction = 'NO SIGNAL'
+    if (htfBullish && pullbackScore >= 40 && mlScore >= 55) direction = 'BUY'
+    if (htfBearish && pullbackScore >= 40 && mlScore >= 55) direction = 'SELL'
+
+    const dp    = ltf.latestClose < 10 ? 5 : ltf.latestClose < 1000 ? 4 : 2
+    const atr   = ltf.atr
+    const price = ltf.latestClose
+
+    // SMC-aware stop loss — use OB level if available, else ATR
+    let buySL, sellSL
+    if (smc.bullishOBLevel && direction === 'BUY') {
+      buySL = (smc.bullishOBLevel - atr * 0.5).toFixed(dp)
+    } else {
+      buySL = (price - atr * 1.5).toFixed(dp)
+    }
+    if (smc.bearishOBLevel && direction === 'SELL') {
+      sellSL = (smc.bearishOBLevel + atr * 0.5).toFixed(dp)
+    } else {
+      sellSL = (price + atr * 1.5).toFixed(dp)
+    }
+
+    // TP targets — use FVG/liquidity levels if available, else ATR
+    const buyTP1  = smc.fvgHigh ? smc.fvgHigh.toFixed(dp) : (price + atr * 2.0).toFixed(dp)
+    const buyTP2  = (price + atr * 3.5).toFixed(dp)
+    const buyTP3  = (price + atr * 5.0).toFixed(dp)
+    const sellTP1 = smc.fvgLow ? smc.fvgLow.toFixed(dp) : (price - atr * 2.0).toFixed(dp)
+    const sellTP2 = (price - atr * 3.5).toFixed(dp)
+    const sellTP3 = (price - atr * 5.0).toFixed(dp)
+
+    const sl  = direction === 'BUY' ? buySL  : sellSL
+    const tp1 = direction === 'BUY' ? buyTP1 : sellTP1
+    const tp2 = direction === 'BUY' ? buyTP2 : sellTP2
+    const tp3 = direction === 'BUY' ? buyTP3 : sellTP3
+
+    const summary = `
+SYMBOL: ${cleanSymbol} | LTF: ${interval} | HTF: ${htfInterval}
+HTF: Close=${htf.latestClose} SMA20=${htf.sma20?.toFixed(dp)} SMA50=${htf.sma50?.toFixed(dp)} TREND=${htfTrend}
+LTF: Close=${price} SMA8=${ltf.sma8?.toFixed(dp)} SMA20=${ltf.sma20?.toFixed(dp)} SMA50=${ltf.sma50?.toFixed(dp)} RSI=${ltf.rsi?.toFixed(1)} ATR=${atr?.toFixed(dp)}
+CLASSICAL PATTERN: ${ltf.pattern}
+SUPPORT: ${ltf.sr.supports.map(s=>s.toFixed(dp)).join(',')||'none'}
+RESISTANCE: ${ltf.sr.resistances.map(r=>r.toFixed(dp)).join(',')||'none'}
+SMC: BullishOB=${smc.bullishOB ? smc.bullishOBLevel?.toFixed(dp) : 'none'} | BearishOB=${smc.bearishOB ? smc.bearishOBLevel?.toFixed(dp) : 'none'}
+SMC: FVG=${smc.fvg} | BOS=${smc.bos} | CHoCH=${smc.choch} | Premium=${smc.premium} | Discount=${smc.discount}
+SIGNAL: ${direction} | ML=${mlScore} | PULLBACK=${pullbackScore}
+${direction==='BUY' ?`BUY:  Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
+${direction==='SELL'?`SELL: Entry=${price} SL=${sl} TP1=${tp1} TP2=${tp2} TP3=${tp3}`:''}
+`
+
+    const aiPrompt = `You are NAVIGATOR AI — an elite trading analyst combining Smart Money Concepts (SMC) and Classical Technical Analysis. Use ONLY this real market data:
+${summary}
+
+Reply with ONLY this JSON. Keep ALL string values SHORT (max 100 chars). No markdown.
+
+{"pair":"${cleanSymbol}","timeframe":"${interval}","htfTimeframe":"${htfInterval}","currentPrice":"${price}","direction":"${direction}","setupName":"brief SMC+Classical setup name","mlScore":${mlScore},"pullbackScore":${pullbackScore},"htfTrend":"${htfTrend}","htfAnalysis":"1 sentence on HTF trend and SMC structure","trendDirection":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","trendStrength":"${mlScore>=70?'STRONG':mlScore>=50?'MODERATE':'WEAK'}","meanReversionZone":"SMA20 + OB zone description","rsiReading":"RSI ${ltf.rsi?.toFixed(1)} status","candlePattern":"${ltf.pattern}","smcOrderBlock":"${smc.bullishOB ? 'Bullish OB at '+smc.bullishOBLevel?.toFixed(dp) : smc.bearishOB ? 'Bearish OB at '+smc.bearishOBLevel?.toFixed(dp) : 'None detected'}","smcFVG":"${smc.fvg} FVG","smcBOS":"${smc.bos} BOS","smcCHoCH":"${smc.choch}","smcZone":"${smc.premium ? 'Premium - sell zone' : smc.discount ? 'Discount - buy zone' : 'Equilibrium'}","entryPrice":"${price}","stopLoss":"${sl}","takeProfit1":"${tp1}","takeProfit2":"${tp2}","takeProfit3":"${tp3}","riskReward":"1:3.3","sentiment":"${htfBullish?'Bullish':htfBearish?'Bearish':'Neutral'}","sentimentScore":${mlScore},"priceAction":"1-2 sentences on candle pattern and SMC context","supportResistance":"1-2 sentences on S/R and order block levels","technicalIndicators":"1-2 sentences on SMA RSI ATR and SMC zones","marketSentiment":"1-2 sentences on MTF confluence with SMC bias","summary":"2-3 sentences combining SMC and classical analysis for the trade","tags":["${htfTrend}","${ltf.pattern.split(' ')[0]}","${smc.bos!=='NONE'?smc.bos+' BOS':'No BOS'}","${direction==='NO SIGNAL'?'Waiting':direction}"]}`
+
+    const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://navigator-ai-three.vercel.app',
+        'X-Title': 'Navigator AI'
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-preview-05-20',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: aiPrompt }]
+      })
+    })
+
+    const aiData = await aiRes.json()
+    if (!aiRes.ok) return res.status(aiRes.status).json({ error: aiData.error?.message || 'AI error' })
+
+    let text = aiData.choices?.[0]?.message?.content || ''
+    text = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return res.status(500).json({ error: `AI returned unexpected content: "${text.slice(0, 200)}"` })
+
+    let jsonStr = jsonMatch[0]
+    jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1')
+    jsonStr = jsonStr.replace(/:\s*"([^"]*)"(?=\s*[,}])/g, (match, val) => `: "${val.replace(/"/g, "'")}"`)
+
+    let result
+    try { result = JSON.parse(jsonStr) }
+    catch (e) {
+      result = buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc })
+    }
+
+    return res.status(200).json({ result })
+
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Internal server error' })
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Streaming live scan (SSE)
-// ═══════════════════════════════════════════════════════════════════════
-async function runLiveScanStreaming(symbol, interval, res) {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no'
-  })
-  const send = (event, data) => {
-    res.write(`event: ${event}\n`)
-    res.write(`data: ${JSON.stringify(data)}\n\n`)
-  }
-  try {
-    const cleanSymbol = symbol.trim().toUpperCase()
-    const { ltfData, htfData, htfInterval } = await loadCandles(cleanSymbol, interval)
-    if (ltfData.error) { send('error', { error: ltfData.error }); res.end(); return }
-
-    const core = computeCore(cleanSymbol, interval, htfInterval, ltfData, htfData)
-    send('instant', { result: core.result })
-
-    const bt = backtestSimilarSetups(ltfData.candles, core)
-    core.result.backtest = bt
-    send('backtest', bt)
-
-    const newsP = fetchNews(cleanSymbol).then(news => {
-      if (!news) return
-      core.result.news = news
-      core.result.mlScoreBlended = clamp(core.result.mlScore + Math.round(news.score * 10), 0, 100)
-      send('news', { ...news, mlScoreBlended: core.result.mlScoreBlended })
-    }).catch(() => {})
-
-    const aiP = polishText(core).then(polished => {
-      if (!polished) return
-      Object.assign(core.result, polished)
-      send('ai', polished)
-    }).catch(() => {})
-
-    await Promise.all([newsP, aiP])
-    send('done', { result: core.result })
-    res.end()
-  } catch (err) {
-    send('error', { error: err.message || 'Internal server error' })
-    res.end()
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  AI polish (4 narrative fields)
-// ═══════════════════════════════════════════════════════════════════════
-async function polishText(core) {
-  const { cleanSymbol, direction, htfTrend, htfInterval, price, sl, tp1, tp2, tp3,
-          ltf, atr, dp, smc, mlScore, pullbackScore } = core
-  const prompt = `You are an institutional trading analyst. Rewrite these 4 fields using ONLY the data below. Each under 140 chars. Reply ONLY with JSON.
-
-DATA:
-Symbol: ${cleanSymbol} | Direction: ${direction} | HTF: ${htfTrend} on ${htfInterval}
-Price: ${price} | SL: ${sl} | TP1: ${tp1} | TP2: ${tp2} | TP3: ${tp3}
-Pattern: ${ltf.pattern} | RSI: ${ltf.rsi?.toFixed(1)} | ATR: ${atr?.toFixed(dp)}
-Structure: ${smc.structureBias} | Premium/Discount: ${smc.premium ? 'Premium' : smc.discount ? 'Discount' : 'Equilibrium'}
-OB: ${smc.bullishOB ? 'Bullish at '+smc.bullishOBLevel?.toFixed(dp) : smc.bearishOB ? 'Bearish at '+smc.bearishOBLevel?.toFixed(dp) : 'None'}
-FVG: ${smc.fvg} | IFVG: ${smc.ifvg} | BOS: ${smc.bos} | CHoCH: ${smc.choch}
-Liquidity: ${smc.liquiditySwept || 'None'} | EQH/EQL: ${smc.equalHL || 'None'} | Displacement: ${smc.displacement || 'None'}
-Zone: ${smc.premium ? 'Premium' : smc.discount ? 'Discount' : 'Equilibrium'}
-ML: ${mlScore}/100 | Pullback: ${pullbackScore}
-
-{"priceAction":"...","supportResistance":"...","marketSentiment":"...","summary":"..."}`
-
-  const r = await callORChat({
-    model: 'meta-llama/llama-3.1-8b-instruct:free',
-    max_tokens: 450, temperature: 0.4,
-    messages: [{ role: 'user', content: prompt }]
-  }, 7000)
-  if (!r.ok) return null
-  const data = await r.json()
-  const json = extractJSON(data.choices?.[0]?.message?.content || '')
-  if (!json) return null
-  const out = {}
-  for (const k of ['priceAction', 'supportResistance', 'marketSentiment', 'summary'])
-    if (json[k]) out[k] = json[k]
-  return out
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  News fusion
-// ═══════════════════════════════════════════════════════════════════════
-const POS_WORDS = ['surge','rally','soar','beat','bullish','upgrade','growth','record','breakthrough','approve','gain','jump','rise','strong','optimism','boost','outperform']
-const NEG_WORDS = ['plunge','crash','tumble','miss','bearish','downgrade','decline','loss','recession','ban','drop','fall','weak','fear','warn','underperform','probe','lawsuit']
-
-function scoreSentiment(text) {
-  const t = text.toLowerCase()
-  let s = 0
-  for (const w of POS_WORDS) if (t.includes(w)) s += 1
-  for (const w of NEG_WORDS) if (t.includes(w)) s -= 1
-  return s
-}
-
-async function fetchNews(symbol) {
-  const cached = cacheGet(newsCache, symbol, NEWS_TTL); if (cached) return cached
-  let headlines = []
-
-  // Crypto: cryptopanic
-  if (process.env.CRYPTOPANIC_KEY && /BTC|ETH|SOL|XRP|DOGE|ADA|BNB/.test(symbol)) {
-    try {
-      const base = symbol.split('/')[0]
-      const url = `https://cryptopanic.com/api/v1/posts/?auth_token=${process.env.CRYPTOPANIC_KEY}&currencies=${base}&public=true`
-      const r = await fetchWithTimeout(url, {}, 5000)
-      if (r.ok) {
-        const j = await r.json()
-        headlines = (j.results || []).slice(0, 8).map(p => ({ title: p.title, url: p.url, source: p.source?.title }))
-      }
-    } catch {}
-  }
-
-  // Generic: NewsAPI
-  if (headlines.length === 0 && process.env.NEWSAPI_KEY) {
-    try {
-      const q = encodeURIComponent(symbol.replace('/', ' '))
-      const url = `https://newsapi.org/v2/everything?q=${q}&pageSize=8&language=en&sortBy=publishedAt&apiKey=${process.env.NEWSAPI_KEY}`
-      const r = await fetchWithTimeout(url, {}, 5000)
-      if (r.ok) {
-        const j = await r.json()
-        headlines = (j.articles || []).map(a => ({ title: a.title, url: a.url, source: a.source?.name }))
-      }
-    } catch {}
-  }
-
-  if (headlines.length === 0) return null
-  const raw = headlines.reduce((s, h) => s + scoreSentiment(h.title || ''), 0)
-  const norm = clamp(raw / Math.max(3, headlines.length), -1, 1) // -1..+1
-  const out = {
-    headlines: headlines.slice(0, 5),
-    score: norm,
-    label: norm > 0.25 ? 'Bullish' : norm < -0.25 ? 'Bearish' : 'Neutral'
-  }
-  cacheSet(newsCache, symbol, out)
-  return out
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  Backtest: how often did similar setups hit TP1 before SL recently?
-// ═══════════════════════════════════════════════════════════════════════
-function backtestSimilarSetups(candles, core) {
-  if (!candles || candles.length < 80) return { samples: 0, winRate: null, note: 'not enough history' }
-  const lookahead = 20 // bars forward
-  const { ltf } = core
-  const dir = core.direction
-  if (dir === 'NO SIGNAL') return { samples: 0, winRate: null, note: 'no active signal' }
-
-  let samples = 0, wins = 0
-  for (let i = 55; i < candles.length - lookahead - 1; i++) {
-    const slice = candles.slice(0, i + 1)
-    const ind = calcIndicators(slice); if (!ind) continue
-    const smc = calcSMC(slice)
-    const bull = smc.structureBias === 'BULLISH'
-    const bear = smc.structureBias === 'BEARISH'
-
-    const matches = dir === 'BUY'
-      ? (bull && (smc.bullishOB || smc.fvg === 'BULLISH' || smc.bos === 'BULLISH'))
-      : (bear && (smc.bearishOB || smc.fvg === 'BEARISH' || smc.bos === 'BEARISH'))
-    if (!matches) continue
-
-    const entry = ind.latestClose
-    const atr = ind.atr
-    const sl = dir === 'BUY' ? entry - atr * 1.5 : entry + atr * 1.5
-    const tp = dir === 'BUY' ? entry + atr * 2.0 : entry - atr * 2.0
-
-    let hit = null
-    for (let k = 1; k <= lookahead && (i + k) < candles.length; k++) {
-      const c = candles[i + k]
-      if (dir === 'BUY')  { if (c.low  <= sl) { hit = 'sl'; break } if (c.high >= tp) { hit = 'tp'; break } }
-      else                { if (c.high >= sl) { hit = 'sl'; break } if (c.low  <= tp) { hit = 'tp'; break } }
-    }
-    if (hit) { samples++; if (hit === 'tp') wins++ }
-  }
-  return {
-    samples,
-    winRate: samples ? Math.round((wins / samples) * 100) : null,
-    lookaheadBars: lookahead,
-    note: samples < 5 ? 'low sample size — treat as indicative' : 'recent in-sample fit'
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  Data fetch
-// ═══════════════════════════════════════════════════════════════════════
-async function fetchCandles(symbol, interval, outputsize = 100) {
+async function fetchCandles(symbol, interval) {
   const variants = [symbol, symbol.replace('/', ''), symbol.replace('/', '') + 'T']
   for (const sym of [...new Set(variants)]) {
     try {
-      const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${interval}&outputsize=${outputsize}&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
-      const res  = await fetchWithTimeout(url, {}, 8000)
+      const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}&interval=${interval}&outputsize=100&apikey=${process.env.TWELVEDATA_API_KEY}&format=JSON`
+      const res  = await fetch(url)
       const data = await res.json()
       if (data.status !== 'error' && data.values?.length > 10) {
         return { candles: data.values.reverse().map(c => ({
-          time: c.datetime, open: +c.open, high: +c.high, low: +c.low, close: +c.close,
-          volume: parseFloat(c.volume || 0)
+          time: c.datetime, open: parseFloat(c.open), high: parseFloat(c.high),
+          low: parseFloat(c.low), close: parseFloat(c.close), volume: parseFloat(c.volume || 0)
         })) }
       }
-    } catch {}
+    } catch (e) {}
   }
   return { error: `Could not fetch data for "${symbol}". Try: EURUSD, BTC/USD, XAU/USD, SPY` }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Indicators
-// ═══════════════════════════════════════════════════════════════════════
 function calcIndicators(candles) {
   if (!candles || candles.length < 55) return null
   const closes = candles.map(c => c.close)
   const highs  = candles.map(c => c.high)
   const lows   = candles.map(c => c.low)
-  const n = closes.length
+  const n      = closes.length
 
-  const sma = (data, p) => {
-    if (data.length < p) return null
-    const out = new Array(p - 1).fill(null)
-    for (let i = p - 1; i < data.length; i++)
-      out.push(data.slice(i - p + 1, i + 1).reduce((a, b) => a + b, 0) / p)
-    return out
+  function calcSMA(data, period) {
+    if (data.length < period) return null
+    const result = new Array(period - 1).fill(null)
+    for (let i = period - 1; i < data.length; i++)
+      result.push(data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period)
+    return result
   }
-  const rsi = (data, p = 14) => {
-    if (data.length < p + 1) return null
-    const out = new Array(p).fill(null)
-    let g = 0, l = 0
-    for (let i = 1; i <= p; i++) { const d = data[i] - data[i - 1]; if (d > 0) g += d; else l += -d }
-    let ag = g / p, al = l / p
-    out.push(al === 0 ? 100 : 100 - 100 / (1 + ag / al))
-    for (let i = p + 1; i < data.length; i++) {
-      const d = data[i] - data[i - 1]
-      ag = (ag * (p - 1) + (d > 0 ? d : 0)) / p
-      al = (al * (p - 1) + (d < 0 ? -d : 0)) / p
-      out.push(al === 0 ? 100 : 100 - 100 / (1 + ag / al))
+
+  function calcRSI(data, period = 14) {
+    if (data.length < period + 1) return null
+    const result = new Array(period).fill(null)
+    let gains = 0, losses = 0
+    for (let i = 1; i <= period; i++) {
+      const diff = data[i] - data[i - 1]
+      if (diff > 0) gains += diff; else losses += Math.abs(diff)
     }
-    return out
+    let ag = gains / period, al = losses / period
+    result.push(al === 0 ? 100 : 100 - 100 / (1 + ag / al))
+    for (let i = period + 1; i < data.length; i++) {
+      const diff = data[i] - data[i - 1]
+      ag = (ag * (period - 1) + (diff > 0 ? diff : 0)) / period
+      al = (al * (period - 1) + (diff < 0 ? Math.abs(diff) : 0)) / period
+      result.push(al === 0 ? 100 : 100 - 100 / (1 + ag / al))
+    }
+    return result
   }
-  const atrCalc = (h, l, c, p = 14) => {
-    const trs = [h[0] - l[0]]
-    for (let i = 1; i < h.length; i++)
-      trs.push(Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1])))
-    let a = trs.slice(0, p).reduce((x, y) => x + y, 0) / p
-    for (let i = p; i < trs.length; i++) a = (a * (p - 1) + trs[i]) / p
-    return a
+
+  function calcATR(highs, lows, closes, period = 14) {
+    const trs = [highs[0] - lows[0]]
+    for (let i = 1; i < highs.length; i++)
+      trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])))
+    let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period
+    for (let i = period; i < trs.length; i++) atr = (atr * (period - 1) + trs[i]) / period
+    return atr
   }
-  const sr = () => {
-    const supports = [], resistances = [], k = 5
+
+  function calcSR(highs, lows) {
+    const supports = [], resistances = [], strength = 5
     const price = closes[closes.length - 1]
-    for (let i = k; i < highs.length - k; i++) {
+    for (let i = strength; i < highs.length - strength; i++) {
       let isHigh = true, isLow = true
-      for (let j = i - k; j <= i + k; j++) {
+      for (let j = i - strength; j <= i + strength; j++) {
         if (j === i) continue
         if (highs[j] >= highs[i]) isHigh = false
         if (lows[j]  <= lows[i])  isLow  = false
@@ -599,15 +369,15 @@ function calcIndicators(candles) {
       if (isHigh) resistances.push(highs[i])
       if (isLow)  supports.push(lows[i])
     }
-    return {
-      supports: supports.filter(s => s < price).slice(-3),
-      resistances: resistances.filter(r => r > price).slice(0, 3)
-    }
+    return { supports: supports.filter(s => s < price).slice(-3), resistances: resistances.filter(r => r > price).slice(0, 3) }
   }
-  const pattern = () => {
-    const last = candles[n - 1], prev = candles[n - 2], prev2 = candles[n - 3]
+
+  function detectPattern(candles) {
+    const last = candles[candles.length - 1]
+    const prev = candles[candles.length - 2]
+    const prev2 = candles[candles.length - 3]
     if (!last || !prev) return 'None detected'
-    const body = Math.abs(last.close - last.open)
+    const body  = Math.abs(last.close - last.open)
     const range = last.high - last.low
     const lower = Math.min(last.open, last.close) - last.low
     const upper = last.high - Math.max(last.open, last.close)
@@ -624,177 +394,119 @@ function calcIndicators(candles) {
     return 'No clear pattern'
   }
 
-  const r14 = rsi(closes, 14)
+  const sma8Arr  = calcSMA(closes, 8)
+  const sma20Arr = calcSMA(closes, 20)
+  const sma50Arr = calcSMA(closes, 50)
+  const rsiArr   = calcRSI(closes, 14)
 
   return {
     latestClose: closes[n - 1],
-    rsi:   r14?.[n - 1]   ?? 50,
-    atr:   atrCalc(highs, lows, closes, 14),
-    sr:    sr(),
-    pattern: pattern()
+    sma8:    sma8Arr?.[n - 1]  ?? null,
+    sma20:   sma20Arr?.[n - 1] ?? null,
+    sma50:   sma50Arr?.[n - 1] ?? null,
+    rsi:     rsiArr?.[n - 1]   ?? 50,
+    atr:     calcATR(highs, lows, closes, 14),
+    sr:      calcSR(highs, lows),
+    pattern: detectPattern(candles)
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  SMC (UPGRADED)
-// ═══════════════════════════════════════════════════════════════════════
+// ── SMC Calculation ──────────────────────────────────────────────────────────
 function calcSMC(candles) {
-  const empty = {
-    bullishOB:false, bearishOB:false, bullishOBLevel:null, bearishOBLevel:null,
-    obMitigated:null, fvg:'NONE', fvgHigh:null, fvgLow:null, ifvg:'NONE',
-    bos:'NONE', choch:'NONE', premium:false, discount:false,
-    liquiditySwept:null, equalHL:null, displacement:null, structureBias:'NEUTRAL'
-  }
-  if (!candles || candles.length < 25) return empty
+  if (!candles || candles.length < 20) return { bullishOB: false, bearishOB: false, fvg: 'NONE', bos: 'NONE', choch: 'NONE', premium: false, discount: false }
 
   const n = candles.length
   const price = candles[n - 1].close
-  const out = { ...empty }
 
-  // ── Order Blocks (last bull/bear candle before strong impulse) ──
-  for (let i = n - 12; i < n - 2; i++) {
-    const c = candles[i], next = candles[i + 1], next2 = candles[i + 2]
-    const avgRange = candles.slice(Math.max(0, i - 10), i)
-      .reduce((s, cc) => s + (cc.high - cc.low), 0) / 10
+  // Order Block detection — last bearish candle before bullish impulse (bullish OB)
+  // last bullish candle before bearish impulse (bearish OB)
+  let bullishOB = false, bullishOBLevel = null
+  let bearishOB = false, bearishOBLevel = null
+
+  for (let i = n - 10; i < n - 2; i++) {
+    const c = candles[i]
+    const next = candles[i + 1]
+    const next2 = candles[i + 2]
+    // Bullish OB: bearish candle followed by strong bullish move
     if (c.close < c.open && next.close > next.open && next2.close > next2.open) {
-      if ((next2.close - c.low) > avgRange * 1.5) { out.bullishOB = true; out.bullishOBLevel = c.low }
+      const impulseSize = next2.close - c.low
+      const avgRange = candles.slice(Math.max(0, i - 10), i).reduce((s, cc) => s + (cc.high - cc.low), 0) / 10
+      if (impulseSize > avgRange * 1.5) {
+        bullishOB = true
+        bullishOBLevel = c.low
+      }
     }
+    // Bearish OB: bullish candle followed by strong bearish move
     if (c.close > c.open && next.close < next.open && next2.close < next2.open) {
-      if ((c.high - next2.close) > avgRange * 1.5) { out.bearishOB = true; out.bearishOBLevel = c.high }
+      const impulseSize = c.high - next2.close
+      const avgRange = candles.slice(Math.max(0, i - 10), i).reduce((s, cc) => s + (cc.high - cc.low), 0) / 10
+      if (impulseSize > avgRange * 1.5) {
+        bearishOB = true
+        bearishOBLevel = c.high
+      }
     }
   }
 
-  // OB mitigation: did price recently revisit the OB?
-  if (out.bullishOB) {
-    const recentLows = candles.slice(-6).map(c => c.low)
-    if (Math.min(...recentLows) <= out.bullishOBLevel * 1.001) out.obMitigated = 'BULLISH_OB_MITIGATED'
-  }
-  if (out.bearishOB) {
-    const recentHighs = candles.slice(-6).map(c => c.high)
-    if (Math.max(...recentHighs) >= out.bearishOBLevel * 0.999) out.obMitigated = 'BEARISH_OB_MITIGATED'
-  }
-
-  // ── FVG (3-candle imbalance) ──
+  // FVG detection — 3-candle imbalance
+  let fvg = 'NONE'
+  let fvgHigh = null, fvgLow = null
   for (let i = n - 8; i < n - 2; i++) {
-    const c1 = candles[i], c3 = candles[i + 2]
-    if (c3.low > c1.high) { out.fvg = 'BULLISH'; out.fvgHigh = c3.low; out.fvgLow = c1.high; break }
-    if (c3.high < c1.low) { out.fvg = 'BEARISH'; out.fvgHigh = c1.low; out.fvgLow = c3.high; break }
+    const c1 = candles[i]
+    const c3 = candles[i + 2]
+    if (c3.low > c1.high) { fvg = 'BULLISH'; fvgHigh = c3.low; fvgLow = c1.high; break }
+    if (c3.high < c1.low) { fvg = 'BEARISH'; fvgHigh = c1.low; fvgLow = c3.high; break }
   }
 
-  // ── Inverse FVG: an FVG that was filled and reclaimed (flips role) ──
-  for (let i = n - 20; i < n - 5; i++) {
-    const c1 = candles[i], c3 = candles[i + 2]; if (!c3) continue
-    if (c3.low > c1.high) {
-      // bullish FVG → if later closed below c1.high then back above, IFVG bearish-turned-bullish reclaim
-      const later = candles.slice(i + 3)
-      const filled = later.some(c => c.low <= c1.high)
-      const reclaimed = filled && later[later.length - 1].close > c3.low
-      if (filled && reclaimed) { out.ifvg = 'BULLISH_RECLAIM'; break }
-    }
-    if (c3.high < c1.low) {
-      const later = candles.slice(i + 3)
-      const filled = later.some(c => c.high >= c1.low)
-      const reclaimed = filled && later[later.length - 1].close < c3.high
-      if (filled && reclaimed) { out.ifvg = 'BEARISH_RECLAIM'; break }
-    }
-  }
-
-  // ── BOS / CHoCH ──
+  // BOS detection — break of recent swing high/low
+  let bos = 'NONE'
   const recentHigh = Math.max(...candles.slice(n - 15, n - 1).map(c => c.high))
   const recentLow  = Math.min(...candles.slice(n - 15, n - 1).map(c => c.low))
-  if (candles[n - 1].close > recentHigh) out.bos = 'BULLISH'
-  if (candles[n - 1].close < recentLow)  out.bos = 'BEARISH'
-  const prevTrend = candles[n - 10].close < candles[n - 5].close ? 'UP' : 'DOWN'
-  if (prevTrend === 'UP'   && out.bos === 'BEARISH') out.choch = 'BEARISH CHoCH'
-  if (prevTrend === 'DOWN' && out.bos === 'BULLISH') out.choch = 'BULLISH CHoCH'
+  if (candles[n - 1].close > recentHigh) bos = 'BULLISH'
+  if (candles[n - 1].close < recentLow)  bos = 'BEARISH'
 
-  // ── Premium / Discount ──
+  // CHoCH — change of character (first BOS against prevailing structure)
+  let choch = 'NONE'
+  const prevTrend = candles[n - 10].close < candles[n - 5].close ? 'UP' : 'DOWN'
+  if (prevTrend === 'UP' && bos === 'BEARISH') choch = 'BEARISH CHoCH'
+  if (prevTrend === 'DOWN' && bos === 'BULLISH') choch = 'BULLISH CHoCH'
+
+  // Premium/Discount zones — based on recent range
   const rangeHigh = Math.max(...candles.slice(n - 20).map(c => c.high))
   const rangeLow  = Math.min(...candles.slice(n - 20).map(c => c.low))
-  const eq = (rangeHigh + rangeLow) / 2
-  out.premium = price > eq
-  out.discount = price < eq
+  const equilibrium = (rangeHigh + rangeLow) / 2
+  const premium = price > equilibrium
+  const discount = price < equilibrium
 
-  // ── Equal Highs / Equal Lows (liquidity pools) ──
-  const eqTol = (rangeHigh - rangeLow) * 0.0015
-  const last20 = candles.slice(-20)
-  const highs = last20.map(c => c.high).sort((a, b) => b - a)
-  const lows  = last20.map(c => c.low).sort((a, b) => a - b)
-  if (highs[0] - highs[1] < eqTol && highs[1] - highs[2] < eqTol) out.equalHL = 'EQUAL_HIGHS'
-  else if (lows[1] - lows[0] < eqTol && lows[2] - lows[1] < eqTol) out.equalHL = 'EQUAL_LOWS'
-
-  // ── Liquidity sweep + reclaim ──
-  // Sell-side: swept previous low, then closed back above it
-  const prevLow  = Math.min(...candles.slice(n - 20, n - 3).map(c => c.low))
-  const prevHigh = Math.max(...candles.slice(n - 20, n - 3).map(c => c.high))
-  const last3 = candles.slice(-3)
-  const sweptLow  = last3.some(c => c.low  < prevLow)
-  const sweptHigh = last3.some(c => c.high > prevHigh)
-  if (sweptLow  && candles[n - 1].close > prevLow)  out.liquiditySwept = 'BUYSIDE_RECLAIMED'  // sell-side liq grabbed → bullish
-  if (sweptHigh && candles[n - 1].close < prevHigh) out.liquiditySwept = 'SELLSIDE_RECLAIMED' // buy-side liq grabbed → bearish
-
-  // ── Displacement (last candle range > 1.8× avg of prior 10) ──
-  const avgRng = candles.slice(-11, -1).reduce((s, c) => s + (c.high - c.low), 0) / 10
-  const lastRng = candles[n - 1].high - candles[n - 1].low
-  if (lastRng > avgRng * 1.8) {
-    out.displacement = candles[n - 1].close > candles[n - 1].open ? 'BULLISH' : 'BEARISH'
-  }
-
-  // ── Structure bias (composite of BOS, CHoCH, swing trend, displacement) ──
-  let bull = 0, bear = 0
-  if (out.bos === 'BULLISH') bull += 2
-  if (out.bos === 'BEARISH') bear += 2
-  if (out.choch === 'BULLISH CHoCH') bull += 2
-  if (out.choch === 'BEARISH CHoCH') bear += 2
-  if (out.displacement === 'BULLISH') bull += 1
-  if (out.displacement === 'BEARISH') bear += 1
-  if (out.liquiditySwept === 'BUYSIDE_RECLAIMED') bull += 1
-  if (out.liquiditySwept === 'SELLSIDE_RECLAIMED') bear += 1
-  // swing slope: last close vs close 10 bars back
-  if (n >= 11) {
-    const slope = candles[n - 1].close - candles[n - 11].close
-    if (slope > 0) bull += 1; else if (slope < 0) bear += 1
-  }
-  out.structureBias = bull > bear + 1 ? 'BULLISH' : bear > bull + 1 ? 'BEARISH' : 'NEUTRAL'
-
-  return out
+  return { bullishOB, bullishOBLevel, bearishOB, bearishOBLevel, fvg, fvgHigh, fvgLow, bos, choch, premium, discount }
 }
-// ═══════════════════════════════════════════════════════════════════════
-function buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc, htfSmc }) {
+
+function buildFallback({ cleanSymbol, interval, htfInterval, price, direction, mlScore, pullbackScore, htfTrend, ltf, htf, sl, tp1, tp2, tp3, dp, smc }) {
   return {
     pair: cleanSymbol, timeframe: interval, htfTimeframe: htfInterval,
     currentPrice: String(price), direction,
     setupName: `HTF ${htfTrend} + ${smc?.bullishOB || smc?.bearishOB ? 'OB' : 'Mean Reversion'} + ${ltf.pattern}`,
     mlScore, pullbackScore, htfTrend,
-    htfAnalysis: `${htfInterval} structure is ${htfTrend} (BOS: ${htfSmc?.bos || 'NONE'}, CHoCH: ${htfSmc?.choch || 'NONE'}).`,
+    htfAnalysis: `${htfInterval} trend is ${htfTrend}. SMA20=${htf.sma20?.toFixed(dp)} SMA50=${htf.sma50?.toFixed(dp)}.`,
     trendDirection: htfTrend === 'BULLISH' ? 'Bullish' : htfTrend === 'BEARISH' ? 'Bearish' : 'Neutral',
     trendStrength: mlScore >= 70 ? 'STRONG' : mlScore >= 50 ? 'MODERATE' : 'WEAK',
-    meanReversionZone: smc?.bullishOB ? `Bullish OB ${smc.bullishOBLevel?.toFixed(dp)}` : smc?.bearishOB ? `Bearish OB ${smc.bearishOBLevel?.toFixed(dp)}` : (smc?.premium ? 'Premium zone' : smc?.discount ? 'Discount zone' : 'Equilibrium'),
+    meanReversionZone: `SMA 20 at ${ltf.sma20?.toFixed(dp)}`,
     rsiReading: `RSI ${ltf.rsi?.toFixed(1)}`,
     candlePattern: ltf.pattern,
     smcOrderBlock: smc?.bullishOB ? `Bullish OB at ${smc.bullishOBLevel?.toFixed(dp)}` : smc?.bearishOB ? `Bearish OB at ${smc.bearishOBLevel?.toFixed(dp)}` : 'None detected',
     smcFVG: smc?.fvg ? `${smc.fvg} FVG` : 'None',
-    smcIFVG: smc?.ifvg && smc.ifvg !== 'NONE' ? smc.ifvg : 'None',
     smcBOS: smc?.bos ? `${smc.bos} BOS` : 'None',
     smcCHoCH: smc?.choch || 'None',
     smcZone: smc?.premium ? 'Premium - sell zone' : smc?.discount ? 'Discount - buy zone' : 'Equilibrium',
-    smcLiquidity: smc?.liquiditySwept || 'None',
-    smcEqualHL: smc?.equalHL || 'None',
-    smcDisplacement: smc?.displacement || 'None',
-    smcMitigation: smc?.obMitigated || 'None',
     entryPrice: String(price), stopLoss: sl,
     takeProfit1: tp1, takeProfit2: tp2, takeProfit3: tp3,
     riskReward: '1:3.3',
     sentiment: htfTrend === 'BULLISH' ? 'Bullish' : htfTrend === 'BEARISH' ? 'Bearish' : 'Neutral',
     sentimentScore: mlScore,
-    priceAction: `${ltf.pattern} at ${price}. ${smc?.bullishOB ? 'Bullish OB confluence.' : smc?.bearishOB ? 'Bearish OB confluence.' : smc?.liquiditySwept ? `Liquidity sweep (${smc.liquiditySwept}).` : 'No clean SMC trigger.'}`,
+    priceAction: `${ltf.pattern} at ${price}. ${smc?.bullishOB ? 'Bullish OB confluence.' : smc?.bearishOB ? 'Bearish OB confluence.' : 'Near SMA20.'}`,
     supportResistance: `Support: ${ltf.sr.supports.map(s=>s.toFixed(dp)).join(', ')||'none'}. Resistance: ${ltf.sr.resistances.map(r=>r.toFixed(dp)).join(', ')||'none'}.`,
-    technicalIndicators: `Structure: ${smc?.structureBias}. BOS: ${smc?.bos}. CHoCH: ${smc?.choch}. FVG: ${smc?.fvg}. IFVG: ${smc?.ifvg}. RSI=${ltf.rsi?.toFixed(1)} ATR=${ltf.atr?.toFixed(dp)}.`,
+    technicalIndicators: `SMA8=${ltf.sma8?.toFixed(dp)} SMA20=${ltf.sma20?.toFixed(dp)} RSI=${ltf.rsi?.toFixed(1)} ATR=${ltf.atr?.toFixed(dp)}. FVG: ${smc?.fvg}. BOS: ${smc?.bos}.`,
     marketSentiment: `HTF ${htfInterval} is ${htfTrend}. SMC zone: ${smc?.premium ? 'Premium' : smc?.discount ? 'Discount' : 'Equilibrium'}. ML Score ${mlScore}/100.`,
     summary: `${direction} on ${cleanSymbol}. Entry=${price} SL=${sl} TP1=${tp1}. OB: ${smc?.bullishOB || smc?.bearishOB ? 'confirmed' : 'none'}. ML=${mlScore}/100.`,
     tags: [htfTrend, ltf.pattern.split(' ')[0], smc?.bos !== 'NONE' ? smc?.bos + ' BOS' : 'No BOS', direction === 'NO SIGNAL' ? 'Waiting' : direction]
   }
 }
-
-// ───────────────────── tiny utils ─────────────────────
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
