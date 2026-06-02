@@ -142,7 +142,7 @@ async function analyzeImage({ imageBase64, imageType, customPrompt }, res) {
     const tiers = [
       { model: 'google/gemini-2.5-pro', timeout: 35000 },
       { model: 'openai/gpt-4o',          timeout: 30000 },
-      { model: 'google/gemini-2.0-flash-001', timeout: 20000 }
+      { model: 'google/gemini-2.5-flash', timeout: 20000 }
     ]
 
     let last
