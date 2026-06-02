@@ -140,9 +140,9 @@ async function analyzeImage({ imageBase64, imageType, customPrompt }, res) {
 
     // Vision-capable models available on OpenRouter (June 2026)
     const tiers = [
-      { model: 'google/gemini-2.5-flash-preview-05-20', timeout: 25000 },
-      { model: 'google/gemini-2.0-flash-exp:free',      timeout: 25000 },
-      { model: 'meta-llama/llama-4-maverick:free',       timeout: 25000 },
+{ model: 'google/gemini-2.5-flash-preview-05-20', timeout: 25000 },
+{ model: 'google/gemini-2.0-flash-exp:free', timeout: 25000 },
+{ model: 'meta-llama/llama-4-maverick:free', timeout: 25000 },
     ]
 
     let last
