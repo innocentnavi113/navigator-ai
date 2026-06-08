@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
 import AdminPage from './pages/AdminPage'
+import TermsPage from './pages/TermsPage'
 
 const ADMIN_EMAIL = 'majolainnocent11@gmail.com'
 
@@ -18,6 +19,11 @@ export default function App() {
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  const path = window.location.pathname
+
+  // Public routes — no auth needed
+  if (path === '/terms') return <TermsPage />
 
   // Loading spinner
   if (session === undefined) {
@@ -38,7 +44,7 @@ export default function App() {
   if (!session) return <AuthPage />
 
   // Check URL for admin page — no react-router needed
-  const isAdmin = window.location.pathname === '/admin'
+  const isAdmin = path === '/admin'
 
   if (isAdmin) {
     return (
