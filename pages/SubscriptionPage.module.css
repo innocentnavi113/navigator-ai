@@ -1,0 +1,151 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg: #0a0d0f;
+  --card: #151a1e;
+  --border: rgba(255,255,255,0.07);
+  --text: #e8eaf0;
+  --muted: #5a6370;
+  --green: #00e676;
+  --cyan: #00bcd4;
+}
+
+.page {
+  background: var(--bg);
+  min-height: 100vh;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 60px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,13,15,0.95);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.backBtn {
+  background: none; border: none;
+  color: var(--muted); font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem; cursor: pointer;
+  padding: 6px 10px; border-radius: 8px; transition: color 0.2s;
+}
+.backBtn:hover { color: var(--green); }
+
+.headerTitle { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1rem; }
+.logoMark { color: var(--green); margin-right: 6px; }
+.ai { color: var(--green); }
+
+.hero { padding: 28px 20px 16px; text-align: center; }
+
+.heroEyebrow {
+  font-size: 0.62rem; color: var(--green);
+  letter-spacing: 0.15em; margin-bottom: 10px;
+}
+
+.heroTitle {
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  font-size: 1.7rem; letter-spacing: -0.02em; margin-bottom: 10px;
+}
+
+.heroSub {
+  font-size: 0.75rem; color: var(--muted);
+  line-height: 1.65; max-width: 300px; margin: 0 auto;
+}
+
+.statusBanner, .statusBannerStandard, .statusBannerPremium {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 16px 16px; padding: 10px 14px;
+  border-radius: 10px; font-size: 0.72rem;
+}
+.statusBanner { background: rgba(90,99,112,0.1); border: 1px solid rgba(90,99,112,0.2); color: var(--muted); }
+.statusBannerStandard { background: rgba(0,188,212,0.08); border: 1px solid rgba(0,188,212,0.25); color: var(--cyan); }
+.statusBannerPremium { background: rgba(0,230,118,0.08); border: 1px solid rgba(0,230,118,0.25); color: var(--green); }
+
+.statusDot, .statusDotCyan, .statusDotGreen {
+  width: 7px; height: 7px; border-radius: 50%;
+  animation: pulse 2s infinite; flex-shrink: 0;
+}
+.statusDot { background: var(--muted); }
+.statusDotCyan { background: var(--cyan); }
+.statusDotGreen { background: var(--green); }
+
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.plans { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 20px; }
+
+.planCard {
+  border: 1px solid; border-radius: 16px; padding: 20px;
+  position: relative; transition: transform 0.2s;
+}
+.planCard:hover { transform: translateY(-2px); }
+
+.badge {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  font-size: 0.6rem; letter-spacing: 0.12em;
+  padding: 3px 12px; border-radius: 20px;
+}
+
+.activeBadge {
+  position: absolute; top: 12px; right: 12px;
+  font-size: 0.6rem; color: var(--green);
+  background: rgba(0,230,118,0.1); border: 1px solid rgba(0,230,118,0.3);
+  padding: 3px 8px; border-radius: 6px; letter-spacing: 0.08em;
+}
+
+.planHeader { margin-bottom: 14px; }
+.planName { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.06em; margin-bottom: 6px; }
+.planPrice { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 2.2rem; letter-spacing: -0.02em; line-height: 1; }
+.planPeriod { font-size: 0.65rem; color: var(--muted); margin-top: 3px; }
+
+.scanCount {
+  display: flex; align-items: baseline; gap: 8px;
+  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.5rem;
+  border: 1px solid; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;
+}
+.scanCountLabel { font-family: 'JetBrains Mono', monospace; font-weight: 400; font-size: 0.68rem; color: var(--muted); }
+
+.features { list-style: none; padding: 0; margin: 0 0 18px; display: flex; flex-direction: column; gap: 8px; }
+.feature { display: flex; align-items: center; gap: 10px; font-size: 0.72rem; color: #99a0ad; }
+.featureCheck { font-size: 0.75rem; flex-shrink: 0; }
+
+.ctaBtn {
+  width: 100%; padding: 13px; border-radius: 12px; border: 1px solid;
+  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 0.88rem;
+  letter-spacing: 0.04em; transition: opacity 0.2s, transform 0.1s;
+}
+.ctaBtn:not(:disabled):hover { opacity: 0.88; transform: scale(1.01); }
+
+.poweredBy { text-align: center; margin-top: 8px; font-size: 0.62rem; color: var(--muted); }
+
+.afterPayment {
+  margin: 0 16px 20px; padding: 18px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+}
+.afterPaymentTitle { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.88rem; margin-bottom: 8px; }
+.afterPaymentText { font-size: 0.72rem; color: var(--muted); line-height: 1.65; margin-bottom: 14px; }
+
+.whatsappBtn {
+  display: block; width: 100%; padding: 12px; border-radius: 10px;
+  background: rgba(37,211,102,0.12); border: 1px solid rgba(37,211,102,0.3);
+  color: #25d366; font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem; text-align: center; text-decoration: none; transition: background 0.2s;
+}
+.whatsappBtn:hover { background: rgba(37,211,102,0.2); }
+
+.faq { padding: 0 16px; display: flex; flex-direction: column; gap: 10px; }
+.faqItem { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.faqQ { font-size: 0.75rem; font-weight: 700; margin-bottom: 6px; }
+.faqA { font-size: 0.7rem; color: var(--muted); line-height: 1.6; }
