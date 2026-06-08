@@ -184,9 +184,12 @@ export default function LandingPage() {
           📲 Download Android App
         </a>
         <div className={styles.footerDisclaimer}>
-          Chart analysis for educational purposes only. Not financial advice. Always manage your risk.
+          Chart analysis for educational purposes only. Not financial advice. Trading foreign exchange and financial markets carries significant risk — you may lose some or all of your capital. Always manage your risk.
         </div>
-        <div className={styles.footerCopy}>© 2026 Navigator AI. All rights reserved.</div>
+        <div className={styles.footerLinks}>
+          <span onClick={() => navigate('/terms')} className={styles.footerLink}>Terms of Service & Risk Disclaimer</span>
+        </div>
+        <div className={styles.footerCopy}>© 2026 Navigator AI · Innocent Traders · South Africa. All rights reserved.</div>
       </footer>
 
     </div>

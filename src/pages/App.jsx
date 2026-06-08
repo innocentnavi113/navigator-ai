@@ -5,6 +5,7 @@ import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
 import LandingPage from './pages/LandingPage'
 import AdminPage from './pages/AdminPage'
+import TermsPage from './pages/TermsPage'
 
 function ProtectedRoute({ session, children }) {
   if (session === undefined) {
@@ -50,13 +51,18 @@ export default function App() {
         {/* Public landing page */}
         <Route path="/" element={<LandingPage />} />
 
+        {/* Public terms page — no auth required */}
+        <Route path="/terms" element={<TermsPage />} />
+
         {/* Auth page — redirect to dashboard if already signed in */}
         <Route
           path="/auth"
           element={
-            session
-              ? <Navigate to="/dashboard" replace />
-              : <AuthPage />
+            session === undefined
+              ? null
+              : session
+                ? <Navigate to="/dashboard" replace />
+                : <AuthPage />
           }
         />
 
