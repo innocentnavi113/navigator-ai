@@ -35,7 +35,7 @@ export default function TermsPage() {
 
         <div style={s.card}>
           <h2 style={s.h2}>1. The Service Provided</h2>
-          <p style={s.p}>1.1. Innocent Traders ("Software Provider", "we", "us") develops and sells NAVI-v3 AI Chart Analysis Tool ("the Software", "NAVI-v3").</p>
+          <p style={s.p}>1.1. Innocent Traders ("Software Provider", "we", "us") develops and sells Navigator AI Chart Analysis Tool ("the Software", "Navigator AI").</p>
           <p style={s.p}>1.2. The Software is a technical utility that analyzes uploaded MT4/MT5 chart screenshots and outputs AI-generated technical observations. This includes identification of chart patterns, support/resistance levels, and market structure.</p>
           <p style={{...s.p, marginBottom: 0}}>1.3. The Software Provider does not manage client trading accounts, hold client funds, connect to broker APIs, or execute trades. The Software does not issue buy/sell recommendations, signals, or alerts.</p>
         </div>
@@ -55,7 +55,7 @@ export default function TermsPage() {
 
         <div style={s.card}>
           <h2 style={s.h2}>4. License Grant &amp; Restrictions</h2>
-          <p style={s.p}>4.1. Upon payment, we grant you a limited, non-exclusive, non-transferable license to use NAVI-v3 for personal use only.</p>
+          <p style={s.p}>4.1. Upon payment, we grant you a limited, non-exclusive, non-transferable license to use Navigator AI for personal use only.</p>
           <p style={{...s.p, marginBottom: 0}}>4.2. You may not resell, redistribute, reverse-engineer, or share your license.</p>
         </div>
 
@@ -85,7 +85,7 @@ export default function TermsPage() {
 
         <div style={s.card}>
           <h2 style={s.h2}>9. Acceptance of Terms</h2>
-          <p style={{...s.p, marginBottom: 0}}>9.1. By purchasing, accessing, or using NAVI-v3, you confirm that you have read, understood, and accept all the terms, risk warnings, and the no-refund policy stated in this agreement.</p>
+          <p style={{...s.p, marginBottom: 0}}>9.1. By purchasing, accessing, or using Navigator AI, you confirm that you have read, understood, and accept all the terms, risk warnings, and the no-refund policy stated in this agreement.</p>
         </div>
 
         <div style={s.contact}>
