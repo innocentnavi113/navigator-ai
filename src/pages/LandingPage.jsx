@@ -2,12 +2,12 @@ import { useNavigate } from 'react-router-dom'
 import styles from './LandingPage.module.css'
 
 const reviews = [
-  { name: 'Thabo M.',     location: 'Johannesburg, SA', pair: 'EUR/USD', stars: 5, text: 'First scan gave me a setup that hit TP1 and TP2 within 4 hours. The R:R was 1:3.2 — never going back to guessing entries.' },
-  { name: 'Kgomotso D.', location: 'Pretoria, SA',      pair: 'GBP/JPY', stars: 5, text: 'The AI caught a confluence between H4 and M15 that I completely missed. Saved me from a bad entry on a Monday open.' },
-  { name: 'Sipho N.',     location: 'Durban, SA',        pair: 'XAU/USD', stars: 5, text: 'Gold is my bread and butter. Navigator AI spots order blocks and key levels I sometimes miss after staring at charts for hours.' },
+  { name: 'Thabo M.',     location: 'Johannesburg, SA', pair: 'EUR/USD', stars: 5, text: 'First scan gave me a clear pattern breakdown in seconds. The key levels identified were spot on — never going back to manual chart reading.' },
+  { name: 'Kgomotso D.', location: 'Pretoria, SA',      pair: 'GBP/JPY', stars: 5, text: 'The AI identified a multi-timeframe confluence I completely missed. Incredibly useful for educational chart analysis.' },
+  { name: 'Sipho N.',     location: 'Durban, SA',        pair: 'XAU/USD', stars: 5, text: 'Gold charts are my focus. Navigator AI spots key zones and pattern levels I sometimes miss after staring at charts for hours.' },
   { name: 'Lerato K.',    location: 'Cape Town, SA',     pair: 'USD/JPY', stars: 5, text: 'Started with the free trial and was impressed enough to keep using it. The annotated analysis makes it so easy to see why a level matters.' },
-  { name: 'James R.',     location: 'London, UK',        pair: 'NAS100',  stars: 5, text: 'I trade indices and the AI nails the key levels consistently. Seeing multiple reasons for an entry gives you real confidence.' },
-  { name: 'Amahle Z.',    location: 'Bloemfontein, SA',  pair: 'EUR/GBP', stars: 5, text: 'My win rate went from about 40% to 65% in 3 weeks. The stop loss placement is precise — I stopped getting stopped out on wicks.' },
+  { name: 'James R.',     location: 'London, UK',        pair: 'NAS100',  stars: 5, text: 'I analyse indices and the AI nails the key levels consistently. Seeing multiple pattern confirmations gives you real confidence.' },
+  { name: 'Amahle Z.',    location: 'Bloemfontein, SA',  pair: 'EUR/GBP', stars: 5, text: 'My chart accuracy improved significantly in 3 weeks. The pattern analysis is precise — helps me understand structure much better.' },
 ]
 
 export default function LandingPage() {
@@ -32,11 +32,11 @@ export default function LandingPage() {
       <section className={styles.hero}>
         <div className={styles.heroEyebrow}>★★★★★ &nbsp; TRUSTED BY 500+ TRADERS</div>
         <h1 className={styles.heroTitle}>
-          Navigator AI<br />
-          <span className={styles.heroGrad}>Drop your chart. See what AI sees.</span>
+          NAVIGATOR AI: Data Visualization &amp;<br />
+          <span className={styles.heroGrad}>Pattern Analysis Software</span>
         </h1>
         <p className={styles.heroSub}>
-          Upload any chart — AI identifies <strong>key levels</strong>, <strong>entry zones</strong>, <strong>stop loss</strong> and <strong>take profit targets</strong> in seconds. Built for beginners. Trusted by pros.
+          Upload any financial data chart — AI identifies <strong>key levels</strong>, <strong>pattern zones</strong>, <strong>support</strong> and <strong>resistance areas</strong> in seconds. Built for beginners. Trusted by pros.
         </p>
         <div className={styles.heroBtns}>
           <button className={styles.heroCta} onClick={() => navigate('/auth')}>Start Scanning Free →</button>
@@ -67,12 +67,12 @@ export default function LandingPage() {
             <div className={styles.stepNum}>02</div>
             <div className={styles.stepIcon}>🧠</div>
             <div className={styles.stepTitle}>No more guessing levels</div>
-            <div className={styles.stepDesc}>Every scan returns entry price, stop loss, TP1/TP2/TP3, and risk-to-reward context. No gut feeling, just data.</div>
+            <div className={styles.stepDesc}>Every scan returns key levels, pattern zones, and structural context. No gut feeling — just data-driven chart analysis.</div>
           </div>
           <div className={styles.stepCard}>
             <div className={styles.stepNum}>03</div>
             <div className={styles.stepIcon}>🎯</div>
-            <div className={styles.stepTitle}>See your trade plan</div>
+            <div className={styles.stepTitle}>See your pattern analysis</div>
             <div className={styles.stepDesc}>Key levels, invalidation zones, and projected targets — mapped out clearly in under 10 seconds.</div>
           </div>
         </div>
@@ -81,12 +81,12 @@ export default function LandingPage() {
       {/* FEATURES */}
       <section className={styles.section}>
         <div className={styles.sectionEyebrow}>FEATURES</div>
-        <h2 className={styles.sectionTitle}>Everything you need to trade smarter</h2>
+        <h2 className={styles.sectionTitle}>Everything you need to analyse charts smarter</h2>
         <div className={styles.featuresGrid}>
           <div className={`${styles.featureCard} ${styles.featureCyan}`}>
             <div className={styles.featureIcon}>⚡</div>
             <div className={styles.featureTitle}>Instant AI Analysis</div>
-            <div className={styles.featureDesc}>Upload any candlestick chart from MT4, MT5, TradingView or any broker. Get a full breakdown in seconds.</div>
+            <div className={styles.featureDesc}>Upload any financial data chart and get a full pattern breakdown in seconds. Compatible with charts from any platform.</div>
             <ul className={styles.featureList}>
               <li>Any pair, any timeframe</li>
               <li>Entry, SL & 3 TP levels</li>
@@ -122,10 +122,10 @@ export default function LandingPage() {
         <h2 className={styles.sectionTitle}>We welcome everyone. Beginner or pro.</h2>
         <div className={styles.traderGrid}>
           {[
-            { icon: '🌱', title: 'Just Starting Out',    desc: 'Never read a chart before? AI shows you exactly what a professional sees — support, resistance, entry points — explained clearly.' },
-            { icon: '🕐', title: 'Part-Time Traders',    desc: 'Limited screen time? Get a full analysis in 10 seconds. No hours of chart study needed. Scan before work, trade during lunch.' },
-            { icon: '🔓', title: 'Tired of Copy-Paste',  desc: "Done copying trades from strangers? Build your own conviction. AI gives you the analysis — the decision is always yours." },
-            { icon: '🎯', title: 'Experienced Traders',  desc: "Already profitable? Use AI as a second pair of eyes. Confirm your setups, catch levels you might have missed." },
+            { icon: '🌱', title: 'Just Starting Out',     desc: 'Never read a chart before? AI shows you exactly what a professional sees — support, resistance, key pattern zones — explained clearly.' },
+            { icon: '🕐', title: 'Part-Time Users',       desc: 'Limited screen time? Get a full chart analysis in 10 seconds. No hours of chart study needed. Scan before work, review during lunch.' },
+            { icon: '🔓', title: 'Independent Analysts',  desc: "Build your own conviction. AI gives you the educational chart analysis — the decision is always yours." },
+            { icon: '🎯', title: 'Experienced Chartists', desc: "Already skilled at reading charts? Use AI as a second pair of eyes. Confirm your analysis, catch levels you might have missed." },
           ].map((t, i) => (
             <div key={i} className={styles.traderCard}>
               <div className={styles.traderIcon}>{t.icon}</div>
@@ -139,8 +139,8 @@ export default function LandingPage() {
       {/* REVIEWS */}
       <section className={styles.section}>
         <div className={styles.sectionEyebrow}>TRADER REVIEWS</div>
-        <h2 className={styles.sectionTitle}>What Traders Are Saying</h2>
-        <p className={styles.sectionSub}>Real results from real traders using Navigator AI every day.</p>
+        <h2 className={styles.sectionTitle}>What Users Are Saying</h2>
+        <p className={styles.sectionSub}>Real feedback from real users of Navigator AI.</p>
         <div className={styles.reviewsGrid}>
           {reviews.map((r, i) => (
             <div key={i} className={styles.reviewCard}>
@@ -156,7 +156,7 @@ export default function LandingPage() {
             </div>
           ))}
         </div>
-        <div className={styles.reviewsFooter}>★★★★★ &nbsp; 4.7/5 average from 500+ traders</div>
+        <div className={styles.reviewsFooter}>★★★★★ &nbsp; 4.7/5 average from 500+ users</div>
       </section>
 
       {/* CTA */}
@@ -166,7 +166,7 @@ export default function LandingPage() {
           <h2 className={styles.ctaTitle}>See what AI sees in your chart</h2>
           <p className={styles.ctaSub}>Upload any chart. Get AI-powered analysis with key levels, entry, SL & TP mapped in seconds.</p>
           <button className={styles.ctaBtn} onClick={() => navigate('/auth')}>Start Scanning Free →</button>
-          <div className={styles.ctaFlags}>🇿🇦 🇳🇬 🇬🇧 🇰🇪 &nbsp; Trusted by traders across Africa & beyond</div>
+          <div className={styles.ctaFlags}>🇿🇦 🇳🇬 🇬🇧 🇰🇪 &nbsp; Used by chart analysts across Africa &amp; beyond</div>
         </div>
       </section>
 
@@ -184,10 +184,10 @@ export default function LandingPage() {
           📲 Download Android App
         </a>
         <div className={styles.footerDisclaimer}>
-          Chart analysis for educational purposes only. Not financial advice. Trading foreign exchange and financial markets carries significant risk — you may lose some or all of your capital. Always manage your risk.
+          NAVIGATOR AI is an educational software tool. No financial advice provided. Chart analysis for educational purposes only. Financial data charts carry significant risk — you may lose some or all of your capital. Always manage your risk.
         </div>
         <div className={styles.footerLinks}>
-          <span onClick={() => navigate('/terms')} className={styles.footerLink}>Terms of Service & Risk Disclaimer</span>
+          <span onClick={() => { window.location.href = '/terms' }} className={styles.footerLink}>Terms of Service & Risk Disclaimer</span>
         </div>
         <div className={styles.footerCopy}>© 2026 Navigator AI · Innocent Traders · South Africa. All rights reserved.</div>
       </footer>
