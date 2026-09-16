@@ -1,12 +1,38 @@
 import { useEffect, useState } from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './supabase'
 import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
+import LandingPage from './pages/LandingPage'
 import AdminPage from './pages/AdminPage'
 import TermsPage from './pages/TermsPage'
 
-const ADMIN_EMAIL = 'majolainnocent11@gmail.com'
-const PATH = window.location.pathname
+function ProtectedRoute({ session, children }) {
+  if (session === undefined) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: '100vh', position: 'relative', zIndex: 1,
+        background: '#050505'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            border: '2px solid #ff2a2a', borderTopColor: 'transparent',
+            animation: 'spin 0.8s linear infinite', margin: '0 auto 12px',
+            boxShadow: '0 0 20px rgba(255,42,42,0.3)'
+          }} />
+          <p style={{ color: '#888', fontSize: '0.72rem', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.15em' }}>
+            LOADING...
+          </p>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
+  if (!session) return <Navigate to="/auth" replace />
+  return children
+}
 
 export default function App() {
   const [session, setSession] = useState(undefined)
@@ -21,39 +47,34 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Public routes — no auth needed, checked AFTER hooks
-  if (PATH === '/terms') return <TermsPage />
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/terms" element={<TermsPage />} />
 
-  // Loading spinner
-  if (session === undefined) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', background: '#0a0d0f'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#00e676', fontSize: '2rem', marginBottom: 12 }}>◎</div>
-          <p style={{ color: '#5a6370', fontSize: '0.82rem', fontFamily: 'monospace' }}>Loading...</p>
-        </div>
-      </div>
-    )
-  }
+        <Route
+          path="/auth"
+          element={
+            session === undefined
+              ? null
+              : session
+                ? <Navigate to="/dashboard" replace />
+                : <AuthPage />
+          }
+        />
 
-  // Not logged in → show auth
-  if (!session) return <AuthPage />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute session={session}>
+              <Dashboard session={session} />
+            </ProtectedRoute>
+          }
+        />
 
-  // Check URL for admin page — no react-router needed
-  const isAdmin = PATH === '/admin'
-
-  if (isAdmin) {
-    return (
-      <AdminPage
-        session={session}
-        onBack={() => { window.location.href = '/' }}
-      />
-    )
-  }
-
-  // Default → main dashboard
-  return <Dashboard session={session} />
+        <Route path="/admin" element={<AdminPage session={session} onBack={() => { window.location.href = '/' }} />} />
+      </Routes>
+    </BrowserRouter>
+  )
 }
