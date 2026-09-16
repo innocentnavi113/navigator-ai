@@ -5,6 +5,7 @@ import { useSubscription } from '../useSubscription'
 import SubscriptionPage from './SubscriptionPage'
 import NewsPanel from '../components/NewsPanel'
 import styles from './Dashboard.module.css'
+import EventIntelligence from '../components/EventIntelligence'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
 const POPULAR   = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY', 'US30']
@@ -16,7 +17,7 @@ const SCAN_STEPS = [
   'Calculating indicators',
   'Generating signal',
 ]
-const TABS = ['Scanner', 'Multi-TF', 'Watchlist','Charts', 'Learn']
+const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Charts', 'Calendar', 'Learn']
 
 function loadRecentScans() {
   try { return JSON.parse(localStorage.getItem('nav_recent_scans') || '[]') } catch { return [] }
@@ -530,6 +531,13 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
+       {/* ══════════ CALENDAR TAB ══════════ */}
+      {activeTab === 'Calendar' && (
+        <div className={styles.tabContent}>
+          <EventIntelligence />
+        </div>
+      )}
+      
       {/* ══════════ SCANNER TAB ══════════ */}
       {activeTab === 'Scanner' && (
         <div className={styles.tabContent}>
