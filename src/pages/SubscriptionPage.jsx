@@ -16,15 +16,15 @@ const PLANS = [
     ],
     cta: 'Current Plan',
     ctaDisabled: true,
-    color: '#5a6370',
-    accent: 'rgba(90,99,112,0.15)',
-    border: 'rgba(90,99,112,0.25)',
+    color: '#666',
+    accent: 'rgba(102,102,102,0.15)',
+    border: 'rgba(102,102,102,0.25)',
   },
   {
     id: 'standard',
     name: 'Standard',
     price: '$25',
-    period: 'per purchase',
+    period: 'one-time purchase',
     scans: 20,
     scanLabel: '20 scans',
     features: [
@@ -46,11 +46,11 @@ const PLANS = [
     id: 'premium',
     name: 'Premium',
     price: '$100',
-    period: 'per month',
+    period: 'per year',
     scans: -1,
     scanLabel: 'Unlimited scans',
     features: [
-      'Unlimited scans / month',
+      'Unlimited scans / year',
       'Full AI analysis',
       'Multi-TF scanner',
       'Push alerts',
@@ -61,9 +61,9 @@ const PLANS = [
     cta: 'Buy Premium',
     ctaDisabled: false,
     url: 'https://paystack.com/buy/app-scanner--premium--onvowo',
-    color: '#00e676',
-    accent: 'rgba(0,230,118,0.08)',
-    border: 'rgba(0,230,118,0.35)',
+    color: '#ff2a2a',
+    accent: 'rgba(255,42,42,0.08)',
+    border: 'rgba(255,42,42,0.35)',
     badge: 'BEST VALUE',
   },
 ]
@@ -119,7 +119,7 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
             className={styles.planCard}
             style={{
               borderColor: currentPlan === plan.id ? plan.color : plan.border,
-              background: currentPlan === plan.id ? plan.accent : 'var(--card)',
+              background: currentPlan === plan.id ? plan.accent : '#0d0d0d',
             }}
           >
             {plan.badge && (
@@ -154,8 +154,8 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
             <button
               className={styles.ctaBtn}
               style={{
-                background: plan.ctaDisabled ? 'rgba(255,255,255,0.05)' : plan.color,
-                color: plan.ctaDisabled ? '#5a6370' : '#000',
+                background: plan.ctaDisabled ? '#141414' : plan.color,
+                color: plan.ctaDisabled ? '#666' : '#000',
                 cursor: plan.ctaDisabled ? 'default' : 'pointer',
                 borderColor: plan.border,
               }}
@@ -192,7 +192,7 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
         {[
           { q: 'What counts as a scan?', a: 'Each time you tap Scan and get a result counts as one scan. Multi-TF uses 4 scans.' },
           { q: 'Do Standard scans expire?', a: 'No — Standard plan scans never expire. Use them at your own pace.' },
-          { q: 'When does Premium reset?', a: 'Premium unlimited scans reset 30 days from your payment date.' },
+          { q: 'When does Premium reset?', a: 'Premium unlimited scans reset 365 days (1 year) from your payment date.' },
           { q: 'Which payment methods are accepted?', a: 'Card, bank transfer, USSD, and mobile money via Paystack.' },
         ].map(({ q, a }) => (
           <div key={q} className={styles.faqItem}>
