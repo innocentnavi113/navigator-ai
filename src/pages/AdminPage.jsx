@@ -2,13 +2,12 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import styles from './AdminPage.module.css'
 
-// Your admin email — change this to your email
 const ADMIN_EMAIL = 'majolainnocent11@gmail.com'
 
 const PLAN_COLORS = {
   free:     '#5a6370',
   standard: '#00bcd4',
-  premium:  '#00e676',
+  premium:  '#00ff88',
 }
 
 export default function AdminPage({ onBack, session }) {
@@ -26,7 +25,6 @@ export default function AdminPage({ onBack, session }) {
   async function loadSubscriptions() {
     setLoading(true)
     try {
-      // Use service role via edge function or direct query
       const { data, error } = await supabase
         .from('subscriptions')
         .select('*')
@@ -36,7 +34,6 @@ export default function AdminPage({ onBack, session }) {
 
       setSubscriptions(data || [])
 
-      // Compute stats
       const s = { total: 0, free: 0, standard: 0, premium: 0, revenue: 0 }
       ;(data || []).forEach(sub => {
         s.total++
@@ -68,7 +65,7 @@ export default function AdminPage({ onBack, session }) {
           updated_at: now,
         }
       } else if (plan === 'premium') {
-        const exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        const exp = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
         update = {
           plan: 'premium',
           scans_total: 99999,
@@ -168,19 +165,14 @@ export default function AdminPage({ onBack, session }) {
   return (
     <div className={styles.page}>
 
-      {/* Toast */}
       {toast && <div className={styles.toast}>{toast}</div>}
 
-      {/* Header */}
       <div className={styles.header}>
         <button className={styles.backBtn} onClick={onBack}>← Back</button>
-        <div className={styles.headerTitle}>
-          ◎ Admin Panel
-        </div>
+        <div className={styles.headerTitle}>◎ Admin Panel</div>
         <button className={styles.refreshBtn} onClick={loadSubscriptions}>↻</button>
       </div>
 
-      {/* Stats */}
       <div className={styles.statsGrid}>
         <div className={styles.statCard}>
           <div className={styles.statValue}>{stats.total}</div>
@@ -191,16 +183,15 @@ export default function AdminPage({ onBack, session }) {
           <div className={styles.statLabel}>Standard</div>
         </div>
         <div className={styles.statCard}>
-          <div className={styles.statValue} style={{ color: '#00e676' }}>{stats.premium}</div>
+          <div className={styles.statValue} style={{ color: '#00ff88' }}>{stats.premium}</div>
           <div className={styles.statLabel}>Premium</div>
         </div>
         <div className={styles.statCard}>
-          <div className={styles.statValue} style={{ color: '#00e676' }}>${stats.revenue}</div>
+          <div className={styles.statValue} style={{ color: '#ff2a2a' }}>${stats.revenue}</div>
           <div className={styles.statLabel}>Revenue</div>
         </div>
       </div>
 
-      {/* Search */}
       <div className={styles.searchWrap}>
         <input
           className={styles.searchInput}
@@ -211,7 +202,6 @@ export default function AdminPage({ onBack, session }) {
         />
       </div>
 
-      {/* Subscriptions list */}
       {loading ? (
         <div className={styles.loadingText}>Loading subscriptions...</div>
       ) : filtered.length === 0 ? (
@@ -221,7 +211,6 @@ export default function AdminPage({ onBack, session }) {
           {filtered.map(sub => (
             <div key={sub.id} className={styles.subCard}>
 
-              {/* User info */}
               <div className={styles.subHeader}>
                 <div>
                   <div className={styles.subEmail}>{sub.email}</div>
@@ -238,11 +227,10 @@ export default function AdminPage({ onBack, session }) {
                 </div>
               </div>
 
-              {/* Scan info */}
               <div className={styles.scanInfo}>
                 <div className={styles.scanInfoItem}>
                   <div className={styles.scanInfoLabel}>Scans Left</div>
-                  <div className={styles.scanInfoValue} style={{ color: sub.scans_left <= 0 ? '#ff4444' : '#00e676' }}>
+                  <div className={styles.scanInfoValue} style={{ color: sub.scans_left <= 0 ? '#ff2a2a' : '#00ff88' }}>
                     {sub.plan === 'premium' ? '∞' : Math.max(0, sub.scans_left ?? (sub.scans_total - sub.scans_used))}
                   </div>
                 </div>
@@ -264,7 +252,6 @@ export default function AdminPage({ onBack, session }) {
                 )}
               </div>
 
-              {/* Actions */}
               <div className={styles.actions}>
                 <div className={styles.actionsLabel}>Activate Plan:</div>
                 <div className={styles.actionBtns}>
@@ -284,12 +271,11 @@ export default function AdminPage({ onBack, session }) {
                     className={`${styles.actionBtn} ${sub.plan === 'premium' ? styles.actionBtnActive : ''}`}
                     onClick={() => activatePlan(sub.user_id, 'premium')}
                     disabled={updating === sub.user_id}
-                    style={{ borderColor: '#00e676', color: '#00e676' }}
-                  >Premium $100</button>
+                    style={{ borderColor: '#00ff88', color: '#00ff88' }}
+                  >Premium $100/yr</button>
                 </div>
               </div>
 
-              {/* Add scans */}
               <div className={styles.addScans}>
                 <div className={styles.actionsLabel}>Add Scans:</div>
                 <div className={styles.addScanBtns}>
@@ -304,7 +290,6 @@ export default function AdminPage({ onBack, session }) {
                 </div>
               </div>
 
-              {/* Notes */}
               <div className={styles.notesWrap}>
                 <textarea
                   className={styles.notesInput}
