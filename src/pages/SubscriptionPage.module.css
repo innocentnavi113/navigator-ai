@@ -1,19 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-
-:root {
-  --bg: #0a0d0f;
-  --card: #151a1e;
-  --border: rgba(255,255,255,0.07);
-  --text: #e8eaf0;
-  --muted: #5a6370;
-  --green: #00e676;
-  --cyan: #00bcd4;
-}
-
 .page {
-  background: var(--bg);
+  background: #050505;
   min-height: 100vh;
-  color: var(--text);
+  color: #f0f0f0;
   font-family: 'JetBrains Mono', monospace;
   max-width: 480px;
   margin: 0 auto;
@@ -25,58 +13,77 @@
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(10,13,15,0.95);
+  border-bottom: 1px solid rgba(255, 42, 42, 0.15);
+  background: rgba(5,5,5,0.95);
   position: sticky;
   top: 0;
   z-index: 10;
+  backdrop-filter: blur(10px);
 }
 
 .backBtn {
   background: none; border: none;
-  color: var(--muted); font-family: 'JetBrains Mono', monospace;
-  font-size: 0.78rem; cursor: pointer;
-  padding: 6px 10px; border-radius: 8px; transition: color 0.2s;
+  color: #888; font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; cursor: pointer;
+  padding: 6px 10px; border-radius: 8px;
+  transition: color 0.2s; letter-spacing: 0.05em;
 }
-.backBtn:hover { color: var(--green); }
+.backBtn:hover { color: #ff2a2a; }
 
-.headerTitle { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1rem; }
-.logoMark { color: var(--green); margin-right: 6px; }
-.ai { color: var(--green); }
+.headerTitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.logoMark { color: #ff2a2a; margin-right: 6px; text-shadow: 0 0 8px #ff2a2a; }
+.ai { color: #ff2a2a; text-shadow: 0 0 8px #ff2a2a; }
 
 .hero { padding: 28px 20px 16px; text-align: center; }
 
 .heroEyebrow {
-  font-size: 0.62rem; color: var(--green);
-  letter-spacing: 0.15em; margin-bottom: 10px;
+  font-size: 0.58rem;
+  color: #ff2a2a;
+  letter-spacing: 0.25em;
+  margin-bottom: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255,42,42,0.5);
 }
 
 .heroTitle {
-  font-family: 'Syne', sans-serif; font-weight: 800;
-  font-size: 1.7rem; letter-spacing: -0.02em; margin-bottom: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
+  text-transform: uppercase;
 }
 
 .heroSub {
-  font-size: 0.75rem; color: var(--muted);
-  line-height: 1.65; max-width: 300px; margin: 0 auto;
+  font-size: 0.68rem; color: #888;
+  line-height: 1.7; max-width: 300px; margin: 0 auto;
+  letter-spacing: 0.03em;
 }
 
 .statusBanner, .statusBannerStandard, .statusBannerPremium {
   display: flex; align-items: center; gap: 8px;
   margin: 0 16px 16px; padding: 10px 14px;
-  border-radius: 10px; font-size: 0.72rem;
+  border-radius: 10px; font-size: 0.68rem;
+  letter-spacing: 0.03em;
 }
-.statusBanner { background: rgba(90,99,112,0.1); border: 1px solid rgba(90,99,112,0.2); color: var(--muted); }
-.statusBannerStandard { background: rgba(0,188,212,0.08); border: 1px solid rgba(0,188,212,0.25); color: var(--cyan); }
-.statusBannerPremium { background: rgba(0,230,118,0.08); border: 1px solid rgba(0,230,118,0.25); color: var(--green); }
+.statusBanner { background: rgba(102,102,102,0.1); border: 1px solid rgba(102,102,102,0.25); color: #888; }
+.statusBannerStandard { background: rgba(0,188,212,0.08); border: 1px solid rgba(0,188,212,0.25); color: #00bcd4; }
+.statusBannerPremium { background: rgba(255,42,42,0.08); border: 1px solid rgba(255,42,42,0.3); color: #ff2a2a; }
 
 .statusDot, .statusDotCyan, .statusDotGreen {
   width: 7px; height: 7px; border-radius: 50%;
   animation: pulse 2s infinite; flex-shrink: 0;
 }
-.statusDot { background: var(--muted); }
-.statusDotCyan { background: var(--cyan); }
-.statusDotGreen { background: var(--green); }
+.statusDot { background: #888; }
+.statusDotCyan { background: #00bcd4; }
+.statusDotGreen { background: #ff2a2a; box-shadow: 0 0 8px #ff2a2a; }
 
 @keyframes pulse {
   0%,100% { opacity: 1; transform: scale(1); }
@@ -87,65 +94,72 @@
 
 .planCard {
   border: 1px solid; border-radius: 16px; padding: 20px;
-  position: relative; transition: transform 0.2s;
+  position: relative;
+  transition: transform 0.2s, box-shadow 0.2s;
+  background: #0d0d0d;
 }
-.planCard:hover { transform: translateY(-2px); }
+.planCard:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(255,42,42,0.08); }
 
 .badge {
   position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
-  font-family: 'Syne', sans-serif; font-weight: 800;
-  font-size: 0.6rem; letter-spacing: 0.12em;
+  font-family: 'JetBrains Mono', monospace; font-weight: 800;
+  font-size: 0.55rem; letter-spacing: 0.18em;
   padding: 3px 12px; border-radius: 20px;
+  text-transform: uppercase;
 }
 
 .activeBadge {
   position: absolute; top: 12px; right: 12px;
-  font-size: 0.6rem; color: var(--green);
-  background: rgba(0,230,118,0.1); border: 1px solid rgba(0,230,118,0.3);
-  padding: 3px 8px; border-radius: 6px; letter-spacing: 0.08em;
+  font-size: 0.55rem; color: #00ff88;
+  background: rgba(0,255,136,0.1); border: 1px solid rgba(0,255,136,0.3);
+  padding: 3px 8px; border-radius: 6px;
+  letter-spacing: 0.12em; font-weight: 800;
 }
 
 .planHeader { margin-bottom: 14px; }
-.planName { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 0.85rem; letter-spacing: 0.06em; margin-bottom: 6px; }
-.planPrice { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 2.2rem; letter-spacing: -0.02em; line-height: 1; }
-.planPeriod { font-size: 0.65rem; color: var(--muted); margin-top: 3px; }
+.planName { font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.75rem; letter-spacing: 0.15em; margin-bottom: 6px; text-transform: uppercase; }
+.planPrice { font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 2rem; letter-spacing: 0.02em; line-height: 1; }
+.planPeriod { font-size: 0.6rem; color: #666; margin-top: 4px; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .scanCount {
   display: flex; align-items: baseline; gap: 8px;
-  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.5rem;
+  font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 1.4rem;
   border: 1px solid; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;
 }
-.scanCountLabel { font-family: 'JetBrains Mono', monospace; font-weight: 400; font-size: 0.68rem; color: var(--muted); }
+.scanCountLabel { font-family: 'JetBrains Mono', monospace; font-weight: 400; font-size: 0.62rem; color: #888; letter-spacing: 0.03em; }
 
 .features { list-style: none; padding: 0; margin: 0 0 18px; display: flex; flex-direction: column; gap: 8px; }
-.feature { display: flex; align-items: center; gap: 10px; font-size: 0.72rem; color: #99a0ad; }
-.featureCheck { font-size: 0.75rem; flex-shrink: 0; }
+.feature { display: flex; align-items: center; gap: 10px; font-size: 0.68rem; color: #999; letter-spacing: 0.03em; }
+.featureCheck { font-size: 0.75rem; flex-shrink: 0; font-weight: 800; }
 
 .ctaBtn {
   width: 100%; padding: 13px; border-radius: 12px; border: 1px solid;
-  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 0.88rem;
-  letter-spacing: 0.04em; transition: opacity 0.2s, transform 0.1s;
+  font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.72rem;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  transition: opacity 0.2s, transform 0.1s;
 }
-.ctaBtn:not(:disabled):hover { opacity: 0.88; transform: scale(1.01); }
+.ctaBtn:not(:disabled):hover { opacity: 0.88; transform: scale(1.01); box-shadow: 0 0 20px rgba(255,42,42,0.3); }
 
-.poweredBy { text-align: center; margin-top: 8px; font-size: 0.62rem; color: var(--muted); }
+.poweredBy { text-align: center; margin-top: 8px; font-size: 0.58rem; color: #666; letter-spacing: 0.08em; }
 
 .afterPayment {
   margin: 0 16px 20px; padding: 18px;
-  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  background: #0d0d0d; border: 1px solid rgba(255,255,255,0.06); border-radius: 16px;
 }
-.afterPaymentTitle { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 0.88rem; margin-bottom: 8px; }
-.afterPaymentText { font-size: 0.72rem; color: var(--muted); line-height: 1.65; margin-bottom: 14px; }
+.afterPaymentTitle { font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+.afterPaymentText { font-size: 0.66rem; color: #888; line-height: 1.7; margin-bottom: 14px; letter-spacing: 0.02em; }
 
 .whatsappBtn {
   display: block; width: 100%; padding: 12px; border-radius: 10px;
   background: rgba(37,211,102,0.12); border: 1px solid rgba(37,211,102,0.3);
   color: #25d366; font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem; text-align: center; text-decoration: none; transition: background 0.2s;
+  font-size: 0.68rem; text-align: center; text-decoration: none;
+  letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;
+  transition: background 0.2s;
 }
 .whatsappBtn:hover { background: rgba(37,211,102,0.2); }
 
 .faq { padding: 0 16px; display: flex; flex-direction: column; gap: 10px; }
-.faqItem { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
-.faqQ { font-size: 0.75rem; font-weight: 700; margin-bottom: 6px; }
-.faqA { font-size: 0.7rem; color: var(--muted); line-height: 1.6; }
+.faqItem { background: #0d0d0d; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 14px 16px; }
+.faqQ { font-size: 0.68rem; font-weight: 800; margin-bottom: 6px; letter-spacing: 0.05em; }
+.faqA { font-size: 0.62rem; color: #888; line-height: 1.65; letter-spacing: 0.02em; }
