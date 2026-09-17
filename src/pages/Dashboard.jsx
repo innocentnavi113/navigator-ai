@@ -18,7 +18,7 @@ const SCAN_STEPS = [
   'Calculating indicators',
   'Generating signal',
 ]
-const TABS = ['Scanner', 'Multi-TF', 'Watchlist', 'Charts', 'Calendar', 'Learn']
+const TABS = ['Scanner', 'Charts']
 
 function loadRecentScans() {
   try { return JSON.parse(localStorage.getItem('nav_recent_scans') || '[]') } catch { return [] }
@@ -578,79 +578,117 @@ export default function Dashboard({ session }) {
 
           {result && !loading && (
             <div className={styles.resultsSection}>
-              <div className={styles.signalHeader}>
-                <div className={styles.signalLeft}>
-                  <div className={styles.signalPair}>{result.pair}</div>
-                  <div className={styles.signalMeta}>
-                    <span className={styles.signalTf}>{result.timeframe}</span>
-                    <span className={styles.signalTf}>{result.htfTimeframe} HTF</span>
-                    {result.currentPrice && <span className={styles.signalPrice}>@ {result.currentPrice}</span>}
+
+              {/* ── AI CHART VISION HEADER ── */}
+              <div className={styles.visionHeader}>
+                <div className={styles.visionLabel}>AI CHART VISION</div>
+                <div className={styles.liveDot}><span className={styles.livePulse}/>LIVE</div>
+              </div>
+
+              {/* ── CONFIDENCE + SIGNAL ROW ── */}
+              <div className={styles.signalHero}>
+                {/* Big confidence ring */}
+                <div className={styles.confRing} style={{ '--conf-color': getMlColor(result.mlScore ?? 50) }}>
+                  <svg className={styles.confSvg} viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="6"/>
+                    <circle cx="40" cy="40" r="34" fill="none"
+                      stroke={getMlColor(result.mlScore ?? 50)}
+                      strokeWidth="6"
+                      strokeDasharray={`${2 * Math.PI * 34 * (result.mlScore ?? 0) / 100} 999`}
+                      strokeLinecap="round"
+                      transform="rotate(-90 40 40)"
+                    />
+                  </svg>
+                  <div className={styles.confInner}>
+                    <div className={styles.confNum} style={{ color: getMlColor(result.mlScore ?? 50) }}>{result.mlScore ?? '—'}</div>
+                    <div className={styles.confLabel}>CONFIDENCE</div>
                   </div>
                 </div>
-                <div className={styles.signalRight}>
-                  <div className={styles.mlCircle} style={{ borderColor: getMlColor(result.mlScore ?? 50) }}>
-                    <div className={styles.mlScore} style={{ color: getMlColor(result.mlScore ?? 50) }}>{result.mlScore ?? '—'}</div>
-                    <div className={styles.mlLabel}>ML</div>
+
+                {/* Direction + setup */}
+                <div className={styles.signalHeroRight}>
+                  <div className={styles.setupName}>{result.setupName || 'SMC SETUP'}</div>
+                  <div className={`${styles.signalDir} ${isBuy ? styles.signalDirBuy : isSell ? styles.signalDirSell : styles.signalDirNeutral}`}>
+                    {isBuy ? '▲' : isSell ? '▼' : '◆'} {result.direction === 'NO SIGNAL' ? 'WAIT' : result.direction} {result.direction !== 'NO SIGNAL' && <span className={styles.signalArrow}>{isBuy ? '↗' : '↘'}</span>}
+                  </div>
+                  {/* SMC confluence checklist */}
+                  <div className={styles.checkList}>
+                    {[
+                      result.smcOrderBlock && result.smcOrderBlock !== 'None detected' ? result.smcOrderBlock.replace('Bullish OB at','OB').replace('Bearish OB at','OB') : null,
+                      result.smcBOS && result.smcBOS !== 'None' ? result.smcBOS : null,
+                      result.smcFVG && result.smcFVG !== 'None' ? result.smcFVG : null,
+                      result.smcCHoCH && result.smcCHoCH !== 'None' ? result.smcCHoCH : null,
+                      result.smcZone ? result.smcZone : null,
+                      result.candlePattern && result.candlePattern !== 'No clear pattern' ? result.candlePattern : null,
+                    ].filter(Boolean).slice(0, 5).map((item, i) => (
+                      <div key={i} className={styles.checkItem}>
+                        <span className={styles.checkMark}>✓</span> {item}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className={`${styles.directionBanner} ${isBuy ? styles.directionBuy : isSell ? styles.directionSell : styles.directionNeutral}`}>
-                <div className={styles.directionIcon}>{isBuy ? '▲' : isSell ? '▼' : '◆'}</div>
-                <div>
-                  <div className={styles.directionLabel}>{result.direction === 'NO SIGNAL' ? 'WAIT — NO SIGNAL' : result.direction}</div>
-                  <div className={styles.directionSetup}>{result.setupName}</div>
-                </div>
-                <div className={styles.directionRR}>{result.riskReward}</div>
-              </div>
-
-              <div className={styles.sectionCard}>
-                <div className={styles.sectionCardLabel}>Higher Timeframe Bias ({result.htfTimeframe})</div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ color: getTrendColor(result.htfTrend), fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: '1.1rem' }}>
-                    {result.htfTrend === 'BULLISH' ? '▲' : result.htfTrend === 'BEARISH' ? '▼' : '◆'} {result.htfTrend}
-                  </div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#888' }}>STRENGTH: <span style={{ color: '#eee' }}>{result.trendStrength}</span></div>
-                </div>
-                <div className={styles.sectionCardText}>{result.htfAnalysis}</div>
-              </div>
-
+              {/* ── TRADE LEVELS ── */}
               <div className={styles.levelsCard}>
-                <div className={styles.sectionCardLabel}>Trade Levels</div>
-                <div className={styles.levelsList}>
-                  {[
-                    { type: 'SL', label: 'Stop Loss',  price: result.stopLoss,    color: '#ff4444' },
-                    { type: 'E',  label: 'Entry',       price: result.entryPrice,  color: '#00bcd4' },
-                    { type: 'T1', label: 'Target 1',    price: result.takeProfit1, color: 'rgba(0,230,118,0.7)' },
-                    { type: 'T2', label: 'Target 2',    price: result.takeProfit2, color: 'rgba(0,230,118,0.85)' },
-                    { type: 'T3', label: 'Target 3',    price: result.takeProfit3, color: '#00e676' },
-                  ].map(({ type, label, price, color }) => (
-                    <div key={type} className={styles.levelItem} style={{ borderColor: color }}>
-                      <div className={styles.levelType} style={{ color }}>{type}</div>
-                      <div className={styles.levelName}>{label}</div>
-                      <div className={styles.levelPrice} style={{ color }}>{price ?? '—'}</div>
-                    </div>
-                  ))}
+                <div className={styles.levelRow}>
+                  <span className={styles.levelTag} style={{ background:'rgba(255,68,68,0.15)', color:'#ff4444' }}>ENTRY ZONE</span>
+                  <span className={styles.levelVal} style={{ color:'#00bcd4' }}>{result.entryPrice ?? '—'}</span>
                 </div>
-                <div className={styles.levelsStrip}>
-                  <div>S: <span style={{ color: '#00e676' }}>{result.stopLoss ?? '—'}</span></div>
-                  <div>R: <span style={{ color: '#ff4444' }}>{result.takeProfit3 ?? '—'}</span></div>
+                <div className={styles.levelDivider}/>
+                <div className={styles.levelRow}>
+                  <span className={styles.levelTag} style={{ background:'rgba(255,68,68,0.15)', color:'#ff4444' }}>STOP LOSS</span>
+                  <span className={styles.levelVal} style={{ color:'#ff4444' }}>{result.stopLoss ?? '—'}</span>
                 </div>
+                <div className={styles.levelDivider}/>
+                <div className={styles.levelRow}>
+                  <span className={styles.levelTag} style={{ background:'rgba(0,230,118,0.1)', color:'#00e676' }}>TAKE PROFIT</span>
+                  <span className={styles.levelVal} style={{ color:'#00e676' }}>{result.takeProfit1 ?? '—'}</span>
+                </div>
+                {result.takeProfit2 && <>
+                  <div className={styles.levelDivider}/>
+                  <div className={styles.levelRow}>
+                    <span className={styles.levelTag} style={{ background:'rgba(0,230,118,0.1)', color:'#00e676' }}>TARGET 2</span>
+                    <span className={styles.levelVal} style={{ color:'#00e676' }}>{result.takeProfit2}</span>
+                  </div>
+                </>}
+                {result.takeProfit3 && <>
+                  <div className={styles.levelDivider}/>
+                  <div className={styles.levelRow}>
+                    <span className={styles.levelTag} style={{ background:'rgba(0,230,118,0.1)', color:'#00e676' }}>TARGET 3</span>
+                    <span className={styles.levelVal} style={{ color:'#00e676' }}>{result.takeProfit3}</span>
+                  </div>
+                </>}
               </div>
 
-              <div className={styles.analysisGrid}>
-                {[
-                  { icon: '🕯️', label: 'Price Action',    text: result.priceAction },
-                  { icon: '📐', label: 'S/R & Liquidity', text: result.supportResistance },
-                  { icon: '📊', label: 'Indicators',       text: result.technicalIndicators },
-                  { icon: '🌐', label: 'MTF Confluence',   text: result.marketSentiment },
-                ].map(({ icon, label, text }) => (
-                  <div key={label} className={styles.analysisCard}>
-                    <div className={styles.analysisCardIcon}>{icon}</div>
-                    <div className={styles.analysisCardLabel}>{label}</div>
-                    <div className={styles.analysisCardText}>{text}</div>
-                  </div>
-                ))}
+              {/* ── MARKET CONDITION ── */}
+              <div className={styles.marketCard}>
+                <div className={styles.marketCardLabel}>MARKET CONDITION</div>
+                <div className={styles.marketCardText}>{result.summary}</div>
+                {result.htfAnalysis && <div className={styles.marketCardText} style={{ marginTop: 6, color: '#99a0ad' }}>{result.htfAnalysis}</div>}
+              </div>
+
+              {/* ── BOTTOM STRIP: MODE / TF / RR / ENGINE ── */}
+              <div className={styles.metaStrip}>
+                <div className={styles.metaItem}>
+                  <div className={styles.metaLabel}>MODE</div>
+                  <div className={styles.metaVal}>STRATEGIST</div>
+                </div>
+                <div className={styles.metaDivider}/>
+                <div className={styles.metaItem}>
+                  <div className={styles.metaLabel}>TF</div>
+                  <div className={styles.metaVal}>{result.timeframe?.toUpperCase()}</div>
+                </div>
+                <div className={styles.metaDivider}/>
+                <div className={styles.metaItem}>
+                  <div className={styles.metaLabel}>R:R</div>
+                  <div className={styles.metaVal}>{result.riskReward}</div>
+                </div>
+                <div className={styles.metaDivider}/>
+                <div className={styles.metaItem}>
+                  <div className={styles.metaLabel}>ENGINE</div>
+                  <div className={styles.metaVal} style={{ color: '#00e676' }}>Active</div>
+                </div>
               </div>
 
               <div className={styles.tagsRow}>
@@ -659,11 +697,7 @@ export default function Dashboard({ session }) {
                 ))}
               </div>
 
-              <div className={styles.summaryCard}>
-                <div className={styles.summaryLabel}>AI Trade Rationale</div>
-                <div className={styles.summaryText}>{result.summary}</div>
-                <div className={styles.annotationFooter}>ANNOTATED BY NAVIGATOR AI</div>
-              </div>
+              <div className={styles.annotationFooter}>USE THIS ANALYSIS TO INFORM YOUR OWN DECISIONS</div>
             </div>
           )}
 

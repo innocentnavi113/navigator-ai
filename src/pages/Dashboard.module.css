@@ -460,3 +460,194 @@
   .analysisGrid { grid-template-columns: 1fr; }
   .app { padding-left: 12px; padding-right: 12px; }
 }
+
+/* ══════════════════════════════════════════
+   TIKTOK-STYLE SCANNER RESULT CARD
+══════════════════════════════════════════ */
+
+.visionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.visionLabel {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: #5a6370;
+}
+.liveDot {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 0.62rem; color: #ff4444;
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.livePulse {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #ff4444;
+  animation: livePulse 1.2s infinite;
+  display: inline-block;
+}
+@keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+
+/* ── Confidence ring + signal row ── */
+.signalHero {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.confRing {
+  position: relative;
+  width: 88px; height: 88px;
+  flex-shrink: 0;
+}
+.confSvg { width: 100%; height: 100%; }
+.confInner {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.confNum {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.confLabel {
+  font-size: 0.45rem;
+  color: #5a6370;
+  letter-spacing: 0.08em;
+  margin-top: 2px;
+}
+
+.signalHeroRight {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+.setupName {
+  font-size: 0.65rem;
+  color: #5a6370;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.signalDir {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1.6rem;
+  display: flex; align-items: center; gap: 6px;
+}
+.signalDirBuy  { color: #00e676; }
+.signalDirSell { color: #ff4444; }
+.signalDirNeutral { color: #888; }
+.signalArrow { font-size: 1.1rem; }
+
+/* SMC checklist */
+.checkList {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.checkItem {
+  font-size: 0.7rem;
+  color: #c8cdd6;
+  font-family: 'JetBrains Mono', monospace;
+  display: flex; align-items: center; gap: 5px;
+}
+.checkMark { color: #00e676; font-size: 0.65rem; }
+
+/* ── Trade levels card ── */
+.levelsCard {
+  background: #0e1215;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 4px 0;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.levelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+}
+.levelTag {
+  font-size: 0.65rem;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+.levelVal {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.levelDivider {
+  height: 1px;
+  background: rgba(255,255,255,0.05);
+  margin: 0 16px;
+}
+
+/* ── Market condition card ── */
+.marketCard {
+  background: #0e1215;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.marketCardLabel {
+  font-size: 0.6rem;
+  color: #5a6370;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+}
+.marketCardText {
+  font-size: 0.72rem;
+  color: #c8cdd6;
+  line-height: 1.65;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Meta strip ── */
+.metaStrip {
+  display: flex;
+  align-items: center;
+  background: #0e1215;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 12px 0;
+  margin-bottom: 12px;
+}
+.metaItem {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 3px;
+}
+.metaLabel {
+  font-size: 0.55rem;
+  color: #5a6370;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.metaVal {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: #e8eaf0;
+}
+.metaDivider {
+  width: 1px; height: 28px;
+  background: rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
