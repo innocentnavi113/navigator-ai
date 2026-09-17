@@ -6,9 +6,10 @@ import SubscriptionPage from './SubscriptionPage'
 import ForexChat from '../components/ForexChat'
 import styles from './Dashboard.module.css'
 import EventIntelligence from '../components/EventIntelligence'
+import EconomicCalendar from '../components/EconomicCalendar'
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '1h', '2h', '4h', '1day']
-const POPULAR   = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD', 'SPY', 'US30']
+const POPULAR   = ['EUR/USD', 'GBP/USD', 'XAU/USD', 'USD/JPY', 'BTC/USD', 'ETH/USD']
 const SCAN_STEPS = [
   'Reading price axis',
   'Mapping market structure',
@@ -41,6 +42,7 @@ export default function Dashboard({ session }) {
   const [htfResults,     setHtfResults]     = useState([])
   const [htfLoading,     setHtfLoading]     = useState(false)
   const [recentScans,    setRecentScans]    = useState(loadRecentScans)
+  const [showCalendar, setShowCalendar] = useState(false)
 
   // ── Chart tab state ────────────────────────────────────────────────
   const [imageBase64,   setImageBase64]   = useState(null)
@@ -264,6 +266,7 @@ export default function Dashboard({ session }) {
             {plan === 'premium' ? 'Premium' : plan === 'standard' ? 'Standard' : 'Free'}
           </button>
           <button className={`${styles.iconBtn} ${showSettings ? styles.iconBtnActive : ''}`} onClick={() => { setShowSettings(p => !p); setShowRecent(false) }}>🔔</button>
+          <button className={`${styles.iconBtn} ${showCalendar ? styles.iconBtnActive : ''}`} onClick={() => setShowCalendar(p => !p)} title="Economic Calendar">📅</button>
           <button className={styles.iconBtn} onClick={handleSignOut}>⏻</button>
         </div>
       </div>
@@ -773,11 +776,20 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      <div className={styles.bottomNav}>
+            <div className={styles.bottomNav}>
         <div className={styles.navDisclaimer}>Use this analysis to inform your own decisions</div>
       </div>
 
-      <ForexChat />
+      {showCalendar && (
+        <EconomicCalendar
+          onClose={() => setShowCalendar(false)}
+          onExecute={({ symbol: sym, direction, event }) => {
+            setSymbol(sym)
+            setActiveTab('Scanner')
+            setShowCalendar(false)
+          }}
+        />
+      )}
     </div>
   )
 }
