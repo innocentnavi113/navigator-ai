@@ -296,6 +296,103 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
+/* ── Pre-release scenario panel ── */
+.preRelease { display: flex; flex-direction: column; gap: 0; }
+
+/* Consensus box */
+.consensusBox {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+.consensusLabel {
+  font-size: 0.6rem;
+  color: #5a6370;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  margin-bottom: 4px;
+}
+.consensusDir {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1rem;
+  margin-bottom: 3px;
+}
+.consensusText {
+  font-size: 0.7rem;
+  color: #888;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Context list */
+.contextList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+.contextRow {
+  font-size: 0.72rem;
+  color: #aaa;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.4;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.preReleaseTitle {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #e8eaf0;
+  margin-bottom: 4px;
+}
+.preReleaseTime {
+  font-size: 0.7rem;
+  color: #5a6370;
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 14px;
+}
+
+.scenarioLabel {
+  font-size: 0.62rem;
+  color: #ffd600;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+}
+
+.scenarios { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+
+.scenarioRow {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.scenarioIf {
+  font-size: 0.7rem;
+  color: #888;
+  font-family: 'JetBrains Mono', monospace;
+}
+.scenarioThen {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+.scenarioPairs {
+  font-size: 0.65rem;
+  color: #5a6370;
+  font-family: 'JetBrains Mono', monospace;
+}
+
 /* ── Empty state ── */
 .emptyState { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 16px; }
 .emptyIcon { font-size: 2.5rem; }
