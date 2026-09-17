@@ -40,6 +40,147 @@ function getDirIcon(dir) {
   return '◆'
 }
 
+function getPreReleaseBias(title, forecast, previous) {
+  const t = title.toLowerCase()
+  const fv = parseFloat((forecast || '').replace(/[^0-9.\-]/g, ''))
+  const pv = parseFloat((previous || '').replace(/[^0-9.\-]/g, ''))
+  const hasBoth = !isNaN(fv) && !isNaN(pv)
+
+  // Forecast vs previous tells us market consensus direction
+  let consensusDir = null
+  let consensusText = ''
+  if (hasBoth) {
+    if (t.includes('unemployment') || t.includes('jobless') || t.includes('claimant')) {
+      // For unemployment: lower = better
+      if (fv < pv) { consensusDir = 'BULLISH'; consensusText = `Market expects improvement (${forecast} vs prev ${previous})` }
+      else if (fv > pv) { consensusDir = 'BEARISH'; consensusText = `Market expects deterioration (${forecast} vs prev ${previous})` }
+      else consensusText = `No change expected (${forecast})` 
+    } else {
+      // For most events: higher = better
+      if (fv > pv) { consensusDir = 'BULLISH'; consensusText = `Market expects improvement (${forecast} vs prev ${previous})` }
+      else if (fv < pv) { consensusDir = 'BEARISH'; consensusText = `Market expects weaker reading (${forecast} vs prev ${previous})` }
+      else consensusText = `No change expected (${forecast})`
+    }
+  } else if (forecast) {
+    consensusText = `Market forecast: ${forecast}`
+  }
+
+  // Event-specific known context (Fed statements, dot plots, speeches etc.)
+  let context = []
+
+  if (t.includes('fomc') || t.includes('fed interest')) {
+    context = [
+      '📋 Fed dot plot signals rates on hold through 2026',
+      '🗣 Powell recently said "no rush to cut" at Jackson Hole',
+      '📊 CME FedWatch: 85% chance of hold, 15% cut',
+      '⚠ Watch for changes in the dot plot — hawkish = SELL Gold',
+    ]
+  } else if (t.includes('non-farm') || t.includes('nfp')) {
+    context = [
+      `📋 Forecast: ${forecast || 'N/A'} jobs (prev: ${previous || 'N/A'})`,
+      '📊 ADP this week will give early clue on direction',
+      '🗣 Fed watching labor market — weak NFP = rate cut bets rise',
+      '⚠ Beat = SELL Gold immediately. Miss = BUY Gold.',
+    ]
+  } else if (t.includes('cpi') || t.includes('inflation')) {
+    context = [
+      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
+      '🗣 Fed targets 2% inflation — above = hawkish, below = dovish',
+      '📊 Core CPI matters most — watch that number',
+      '⚠ Hot CPI = SELL Gold. Cool CPI = BUY Gold.',
+    ]
+  } else if (t.includes('official bank rate')) {
+    context = [
+      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
+      '🗣 BOE has signaled gradual cuts through 2026',
+      '📊 Market pricing 2 more cuts this year',
+      '⚠ A cut is expected — surprise hold = strong GBP BUY',
+    ]
+  } else if (t.includes('boj')) {
+    context = [
+      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
+      '🗣 BOJ Governor Ueda signaled possible hike if wages rise',
+      '📊 Markets pricing 60% chance of hike by year end',
+      '⚠ Surprise hike = strong SELL USD/JPY opportunity',
+    ]
+  } else if (t.includes('refinancing') || t.includes('ecb')) {
+    context = [
+      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
+      '🗣 ECB Lagarde indicated data-dependent approach',
+      '📊 Markets expect 1-2 more cuts in 2026',
+      '⚠ Surprise hold = EUR/USD BUY. Cut = EUR/USD SELL',
+    ]
+  } else if (t.includes('gdp')) {
+    context = [
+      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
+      '📊 Strong GDP = central bank stays hawkish',
+      '⚠ Beat = BUY that currency. Miss = SELL.',
+    ]
+  } else if (forecast || previous) {
+    context = [
+      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
+      '⚠ Wait for actual number before trading.',
+    ]
+  }
+
+  return { consensusDir, consensusText, context }
+}
+
+function parseFloat2(str) {
+  if (!str) return NaN
+  return parseFloat(str.replace(/[^0-9.\-]/g, ''))
+}
+
+function getScenarios(title, pairs) {
+  const t = title.toLowerCase()
+  if (t.includes('non-farm') || t.includes('nfp') || t.includes('adp'))
+    return [
+      { condition: 'Beat forecast',  direction: 'SELL GOLD',  pairs: ['XAU/USD'] },
+      { condition: 'Miss forecast',  direction: 'BUY GOLD',   pairs: ['XAU/USD'] },
+      { condition: 'Beat forecast',  direction: 'SELL EUR/USD', pairs: ['EUR/USD'] },
+    ]
+  if (t.includes('fomc') || t.includes('fed interest'))
+    return [
+      { condition: 'Hike / Hawkish', direction: 'SELL GOLD',    pairs: ['XAU/USD'] },
+      { condition: 'Cut / Dovish',   direction: 'BUY GOLD',     pairs: ['XAU/USD'] },
+      { condition: 'Hold neutral',   direction: 'WATCH price',   pairs: ['XAU/USD', 'EUR/USD'] },
+    ]
+  if (t.includes('cpi') || t.includes('ppi') || t.includes('inflation'))
+    return [
+      { condition: 'Hot (above forecast)', direction: 'SELL GOLD',  pairs: ['XAU/USD'] },
+      { condition: 'Cool (below forecast)', direction: 'BUY GOLD',  pairs: ['XAU/USD'] },
+    ]
+  if (t.includes('official bank rate'))
+    return [
+      { condition: 'Hold or Hike', direction: 'BUY GBP/USD',  pairs: ['GBP/USD'] },
+      { condition: 'Cut',          direction: 'SELL GBP/USD', pairs: ['GBP/USD'] },
+    ]
+  if (t.includes('boj'))
+    return [
+      { condition: 'Hike / Hawkish', direction: 'SELL USD/JPY', pairs: ['USD/JPY'] },
+      { condition: 'Hold / Dovish',  direction: 'BUY USD/JPY',  pairs: ['USD/JPY'] },
+    ]
+  if (t.includes('refinancing') || t.includes('ecb'))
+    return [
+      { condition: 'Hold or Hike', direction: 'BUY EUR/USD',  pairs: ['EUR/USD'] },
+      { condition: 'Cut',          direction: 'SELL EUR/USD', pairs: ['EUR/USD'] },
+    ]
+  if (t.includes('gdp'))
+    return [
+      { condition: 'Beat forecast', direction: 'BUY currency',  pairs: pairs.slice(0,1) },
+      { condition: 'Miss forecast', direction: 'SELL currency', pairs: pairs.slice(0,1) },
+    ]
+  if (t.includes('unemployment') || t.includes('jobless'))
+    return [
+      { condition: 'Higher than expected', direction: 'BUY GOLD',   pairs: ['XAU/USD'] },
+      { condition: 'Lower than expected',  direction: 'SELL GOLD',  pairs: ['XAU/USD'] },
+    ]
+  return [
+    { condition: 'Beat forecast', direction: 'BUY',  pairs },
+    { condition: 'Miss forecast', direction: 'SELL', pairs },
+  ]
+}
+
 export default function EconomicCalendar({ onClose, onExecute }) {
   const [events,  setEvents]  = useState([])
   const [loading, setLoading] = useState(true)
@@ -151,42 +292,111 @@ export default function EconomicCalendar({ onClose, onExecute }) {
                   <div className={styles.signalBoxHeader}>
                     <span className={styles.signalBoxLabel}>SIGNAL DIRECTION</span>
                   </div>
-                  <div className={styles.signalAlert}>
-                    <span>⚠</span> NEWS ALERT <span>⚠</span>
-                  </div>
-                  <div className={styles.signalEventName}>! {sel.title.toUpperCase()} !</div>
 
-                  <div className={styles.signalPairs}>
-                    {sel.pairs.map(p => (
-                      <div key={p} className={styles.pairSignalRow}>
-                        <span className={styles.pairSignalDot} />
-                        <span className={styles.pairSignalName}>{p}</span>
-                        <span className={styles.pairSignalDir} style={{ color: getDirColor(sel.direction) }}>
-                          — {sel.direction}
-                        </span>
+                  {sel.direction === 'WAIT' ? (
+                    /* ── Pre-release panel ── */
+                    <div className={styles.preRelease}>
+                      <div className={styles.preReleaseTitle}>
+                        ⏳ Waiting for <span style={{ color: '#ffd600' }}>{sel.title}</span>
                       </div>
-                    ))}
-                  </div>
+                      <div className={styles.preReleaseTime}>
+                        Releases {timeUntil(sel.date)} · {formatTime(sel.date)}
+                      </div>
 
-                  {onExecute && (
-                    <button
-                      className={styles.executeBtn}
-                      onClick={() => {
-                        onExecute({ symbol: sel.pairs[0], direction: sel.direction, event: sel })
-                        onClose()
-                      }}
-                    >
-                      EXECUTE
-                    </button>
+                      {/* Market consensus from forecast vs previous */}
+                      {(() => {
+                        const bias = getPreReleaseBias(sel.title, sel.forecast, sel.previous)
+                        return (
+                          <>
+                            {bias.consensusText && (
+                              <div className={styles.consensusBox} style={{
+                                borderColor: bias.consensusDir === 'BULLISH' ? 'rgba(0,230,118,0.3)' : bias.consensusDir === 'BEARISH' ? 'rgba(255,68,68,0.3)' : 'rgba(255,255,255,0.1)'
+                              }}>
+                                <div className={styles.consensusLabel}>MARKET CONSENSUS</div>
+                                <div className={styles.consensusDir} style={{
+                                  color: bias.consensusDir === 'BULLISH' ? '#00e676' : bias.consensusDir === 'BEARISH' ? '#ff4444' : '#ffd600'
+                                }}>
+                                  {bias.consensusDir === 'BULLISH' ? '▲ BULLISH BIAS' : bias.consensusDir === 'BEARISH' ? '▼ BEARISH BIAS' : '◆ NEUTRAL'}
+                                </div>
+                                <div className={styles.consensusText}>{bias.consensusText}</div>
+                              </div>
+                            )}
+
+                            {bias.context.length > 0 && (
+                              <>
+                                <div className={styles.scenarioLabel} style={{ marginTop: 12 }}>MARKET CONTEXT</div>
+                                <div className={styles.contextList}>
+                                  {bias.context.map((c, i) => (
+                                    <div key={i} className={styles.contextRow}>{c}</div>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </>
+                        )
+                      })()}
+
+                      <div className={styles.scenarioLabel} style={{ marginTop: 14 }}>POSSIBLE OUTCOMES</div>
+                      <div className={styles.scenarios}>
+                        {getScenarios(sel.title, sel.pairs).map((s, i) => (
+                          <div key={i} className={styles.scenarioRow}>
+                            <div className={styles.scenarioIf}>{s.condition}</div>
+                            <div className={styles.scenarioThen} style={{ color: getDirColor(s.direction) }}>
+                              → {s.direction}
+                            </div>
+                            <div className={styles.scenarioPairs}>{s.pairs.join(' · ')}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className={styles.warnings} style={{ marginTop: 12 }}>
+                        <div className={styles.warningRow}>⚠ Do NOT trade before the release.</div>
+                        <div className={styles.warningRow}>⏱ Wait for actual number + candle close.</div>
+                        <div className={styles.warningRow}>💰 Only risk what you can afford to lose.</div>
+                      </div>
+                      <div className={styles.responsibleText}>Trade responsibly. 🧠</div>
+                    </div>
+                  ) : (
+                    /* ── Post-release: show actual signal ── */
+                    <>
+                      <div className={styles.signalAlert}>
+                        <span>⚠</span> NEWS ALERT <span>⚠</span>
+                      </div>
+                      <div className={styles.signalEventName}>! {sel.title.toUpperCase()} !</div>
+
+                      <div className={styles.signalPairs}>
+                        {sel.pairs.map(p => (
+                          <div key={p} className={styles.pairSignalRow}>
+                            <span className={styles.pairSignalDot} />
+                            <span className={styles.pairSignalName}>{p}</span>
+                            <span className={styles.pairSignalDir} style={{ color: getDirColor(sel.direction) }}>
+                              — {sel.direction}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {onExecute && (
+                        <button
+                          className={styles.executeBtn}
+                          onClick={() => {
+                            onExecute({ symbol: sel.pairs[0], direction: sel.direction, event: sel })
+                            onClose()
+                          }}
+                        >
+                          EXECUTE
+                        </button>
+                      )}
+
+                      <div className={styles.warnings}>
+                        <div className={styles.warningRow}>⚠ High-impact news can cause extreme volatility.</div>
+                        <div className={styles.warningRow}>💰 Only use an amount you can afford to lose.</div>
+                      </div>
+
+                      <div className={styles.signalNote}>{sel.signal}</div>
+                      <div className={styles.responsibleText}>Trade responsibly. 🧠</div>
+                    </>
                   )}
-
-                  <div className={styles.warnings}>
-                    <div className={styles.warningRow}>⚠ High-impact news can cause extreme volatility.</div>
-                    <div className={styles.warningRow}>💰 Only use an amount you can afford to lose.</div>
-                  </div>
-
-                  <div className={styles.signalNote}>{sel.signal}</div>
-                  <div className={styles.responsibleText}>Trade responsibly. 🧠</div>
                 </div>
 
                 {/* Affected pairs chips */}
