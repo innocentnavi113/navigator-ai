@@ -52,7 +52,28 @@ function getPreReleaseBias(title, forecast, previous) {
   // Returns: { signal, direction, currency, pair, reason, context[] }
 
   // BOJ — higher rate = JPY stronger = SELL USD/JPY
+  // BUT: if both values have "<" prefix, it's a ceiling not a target = NEUTRAL
   if (t.includes('boj') || t.includes('bank of japan')) {
+    const forecastHasCap = (forecast || '').trim().startsWith('<')
+    const prevHasCap     = (previous || '').trim().startsWith('<')
+    const bothAreCaps    = forecastHasCap && prevHasCap
+    // If both values are "<X%" style, we can't predict direction — wait for actual
+    if (bothAreCaps) {
+      return {
+        signal: 'WAIT FOR RELEASE',
+        dir: 'WAIT',
+        currency: 'JPY',
+        pair: 'USD/JPY',
+        reason: `Both forecast (${forecast}) and previous (${previous}) use "<" ceiling values — direction depends on actual decision, not forecast numbers.`,
+        context: [
+          '📋 "<1.25%" means "less than 1.25%" — NOT a guaranteed hike',
+          '📋 BOJ hold = JPY weakens = USD/JPY goes UP = BUY',
+          '📋 BOJ hike = JPY strengthens = USD/JPY goes DOWN = SELL',
+          '🗣 BOJ Gov Ueda: decisions depend on wage and inflation data',
+          '⚠ Wait for actual announcement — do NOT trade before release',
+        ]
+      }
+    }
     const signal = isHigher ? 'SELL USD/JPY' : isLower ? 'BUY USD/JPY' : 'WAIT FOR RELEASE'
     const dir    = isHigher ? 'SELL' : isLower ? 'BUY' : 'WAIT'
     return {
@@ -60,15 +81,15 @@ function getPreReleaseBias(title, forecast, previous) {
       currency: 'JPY',
       pair: 'USD/JPY',
       reason: isHigher
-        ? `Forecast ${forecast} > prev ${previous} → market expects BOJ rate hike → JPY strengthens → SELL USD/JPY`
+        ? `Forecast ${forecast} > prev ${previous} → BOJ rate hike expected → JPY strengthens → SELL USD/JPY`
         : isLower
-        ? `Forecast ${forecast} < prev ${previous} → market expects hold/cut → JPY weakens → BUY USD/JPY`
+        ? `Forecast ${forecast} < prev ${previous} → BOJ hold/cut expected → JPY weakens → BUY USD/JPY`
         : 'No forecast available — wait for actual decision',
       context: [
-        '📋 Higher rate = JPY gets stronger = USD/JPY goes DOWN',
-        '📋 Hold/cut = JPY weakens = USD/JPY goes UP',
+        '📋 BOJ hike = JPY stronger = USD/JPY goes DOWN = SELL',
+        '📋 BOJ hold/cut = JPY weaker = USD/JPY goes UP = BUY',
         '🗣 BOJ Gov Ueda: rate hikes depend on wage growth data',
-        '📊 BOJ moves less often — surprise decisions cause big spikes',
+        '📊 BOJ moves rarely — surprise decisions cause massive spikes',
         '⚠ Wait for candle close AFTER announcement before entering',
       ]
     }
@@ -76,6 +97,25 @@ function getPreReleaseBias(title, forecast, previous) {
 
   // FOMC/Fed — higher rate = USD stronger = SELL Gold, SELL EUR/USD
   if (t.includes('fomc') || t.includes('fed interest') || t.includes('federal')) {
+    const forecastHasCap = (forecast || '').trim().startsWith('<')
+    const prevHasCap     = (previous || '').trim().startsWith('<')
+    const bothAreCaps    = forecastHasCap && prevHasCap
+    if (bothAreCaps) {
+      return {
+        signal: 'WAIT FOR RELEASE',
+        dir: 'WAIT',
+        currency: 'USD',
+        pair: 'XAU/USD',
+        reason: `Both values are ceiling rates — actual decision determines direction. Watch for hike, hold, or cut.`,
+        context: [
+          '📋 Rate hike or hawkish tone = USD up = SELL Gold',
+          '📋 Rate cut or dovish tone = USD down = BUY Gold',
+          '📋 Hold with hawkish statement = SELL Gold',
+          '🗣 Powell press conference tone matters as much as the rate',
+          '⚠ Biggest volatility event — wait for candle close',
+        ]
+      }
+    }
     const signal = isHigher ? 'SELL GOLD' : isLower ? 'BUY GOLD' : 'WAIT FOR RELEASE'
     const dir    = isHigher ? 'SELL' : isLower ? 'BUY' : 'WAIT'
     return {
