@@ -45,85 +45,178 @@ function getPreReleaseBias(title, forecast, previous) {
   const fv = parseFloat((forecast || '').replace(/[^0-9.\-]/g, ''))
   const pv = parseFloat((previous || '').replace(/[^0-9.\-]/g, ''))
   const hasBoth = !isNaN(fv) && !isNaN(pv)
+  const isHigher = hasBoth && fv > pv
+  const isLower  = hasBoth && fv < pv
 
-  // Forecast vs previous tells us market consensus direction
-  let consensusDir = null
-  let consensusText = ''
-  if (hasBoth) {
-    if (t.includes('unemployment') || t.includes('jobless') || t.includes('claimant')) {
-      // For unemployment: lower = better
-      if (fv < pv) { consensusDir = 'BULLISH'; consensusText = `Market expects improvement (${forecast} vs prev ${previous})` }
-      else if (fv > pv) { consensusDir = 'BEARISH'; consensusText = `Market expects deterioration (${forecast} vs prev ${previous})` }
-      else consensusText = `No change expected (${forecast})` 
-    } else {
-      // For most events: higher = better
-      if (fv > pv) { consensusDir = 'BULLISH'; consensusText = `Market expects improvement (${forecast} vs prev ${previous})` }
-      else if (fv < pv) { consensusDir = 'BEARISH'; consensusText = `Market expects weaker reading (${forecast} vs prev ${previous})` }
-      else consensusText = `No change expected (${forecast})`
+  // ── Each event type has its own bias logic ──────────────────────────────
+  // Returns: { signal, direction, currency, pair, reason, context[] }
+
+  // BOJ — higher rate = JPY stronger = SELL USD/JPY
+  if (t.includes('boj') || t.includes('bank of japan')) {
+    const signal = isHigher ? 'SELL USD/JPY' : isLower ? 'BUY USD/JPY' : 'WAIT FOR RELEASE'
+    const dir    = isHigher ? 'SELL' : isLower ? 'BUY' : 'WAIT'
+    return {
+      signal, dir,
+      currency: 'JPY',
+      pair: 'USD/JPY',
+      reason: isHigher
+        ? `Forecast ${forecast} > prev ${previous} → market expects BOJ rate hike → JPY strengthens → SELL USD/JPY`
+        : isLower
+        ? `Forecast ${forecast} < prev ${previous} → market expects hold/cut → JPY weakens → BUY USD/JPY`
+        : 'No forecast available — wait for actual decision',
+      context: [
+        '📋 Higher rate = JPY gets stronger = USD/JPY goes DOWN',
+        '📋 Hold/cut = JPY weakens = USD/JPY goes UP',
+        '🗣 BOJ Gov Ueda: rate hikes depend on wage growth data',
+        '📊 BOJ moves less often — surprise decisions cause big spikes',
+        '⚠ Wait for candle close AFTER announcement before entering',
+      ]
     }
-  } else if (forecast) {
-    consensusText = `Market forecast: ${forecast}`
   }
 
-  // Event-specific known context (Fed statements, dot plots, speeches etc.)
-  let context = []
-
-  if (t.includes('fomc') || t.includes('fed interest')) {
-    context = [
-      '📋 Fed dot plot signals rates on hold through 2026',
-      '🗣 Powell recently said "no rush to cut" at Jackson Hole',
-      '📊 CME FedWatch: 85% chance of hold, 15% cut',
-      '⚠ Watch for changes in the dot plot — hawkish = SELL Gold',
-    ]
-  } else if (t.includes('non-farm') || t.includes('nfp')) {
-    context = [
-      `📋 Forecast: ${forecast || 'N/A'} jobs (prev: ${previous || 'N/A'})`,
-      '📊 ADP this week will give early clue on direction',
-      '🗣 Fed watching labor market — weak NFP = rate cut bets rise',
-      '⚠ Beat = SELL Gold immediately. Miss = BUY Gold.',
-    ]
-  } else if (t.includes('cpi') || t.includes('inflation')) {
-    context = [
-      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
-      '🗣 Fed targets 2% inflation — above = hawkish, below = dovish',
-      '📊 Core CPI matters most — watch that number',
-      '⚠ Hot CPI = SELL Gold. Cool CPI = BUY Gold.',
-    ]
-  } else if (t.includes('official bank rate')) {
-    context = [
-      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
-      '🗣 BOE has signaled gradual cuts through 2026',
-      '📊 Market pricing 2 more cuts this year',
-      '⚠ A cut is expected — surprise hold = strong GBP BUY',
-    ]
-  } else if (t.includes('boj')) {
-    context = [
-      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
-      '🗣 BOJ Governor Ueda signaled possible hike if wages rise',
-      '📊 Markets pricing 60% chance of hike by year end',
-      '⚠ Surprise hike = strong SELL USD/JPY opportunity',
-    ]
-  } else if (t.includes('refinancing') || t.includes('ecb')) {
-    context = [
-      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
-      '🗣 ECB Lagarde indicated data-dependent approach',
-      '📊 Markets expect 1-2 more cuts in 2026',
-      '⚠ Surprise hold = EUR/USD BUY. Cut = EUR/USD SELL',
-    ]
-  } else if (t.includes('gdp')) {
-    context = [
-      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
-      '📊 Strong GDP = central bank stays hawkish',
-      '⚠ Beat = BUY that currency. Miss = SELL.',
-    ]
-  } else if (forecast || previous) {
-    context = [
-      `📋 Forecast: ${forecast || 'N/A'} (prev: ${previous || 'N/A'})`,
-      '⚠ Wait for actual number before trading.',
-    ]
+  // FOMC/Fed — higher rate = USD stronger = SELL Gold, SELL EUR/USD
+  if (t.includes('fomc') || t.includes('fed interest') || t.includes('federal')) {
+    const signal = isHigher ? 'SELL GOLD' : isLower ? 'BUY GOLD' : 'WAIT FOR RELEASE'
+    const dir    = isHigher ? 'SELL' : isLower ? 'BUY' : 'WAIT'
+    return {
+      signal, dir,
+      currency: 'USD',
+      pair: 'XAU/USD',
+      reason: isHigher
+        ? `Forecast suggests hike → USD strengthens → Gold falls → SELL XAU/USD`
+        : isLower
+        ? `Forecast suggests cut/dovish → USD weakens → Gold rises → BUY XAU/USD`
+        : 'Wait for Fed statement and dot plot before entering',
+      context: [
+        '📋 Rate hike = USD up = Gold DOWN = SELL XAU/USD',
+        '📋 Rate cut = USD down = Gold UP = BUY XAU/USD',
+        '📋 Hold with hawkish tone = SELL Gold. Hold with dovish = BUY Gold',
+        '🗣 Powell tone at press conference matters as much as the rate',
+        '⚠ Biggest volatility event — use small size, wide SL',
+      ]
+    }
   }
 
-  return { consensusDir, consensusText, context }
+  // NFP — higher jobs = USD stronger = SELL Gold
+  if (t.includes('non-farm') || t.includes('nfp') || t.includes('adp')) {
+    const signal = isHigher ? 'SELL GOLD' : isLower ? 'BUY GOLD' : 'WAIT FOR RELEASE'
+    const dir    = isHigher ? 'SELL' : isLower ? 'BUY' : 'WAIT'
+    return {
+      signal, dir,
+      currency: 'USD',
+      pair: 'XAU/USD',
+      reason: isHigher
+        ? `Forecast ${forecast} > prev ${previous} → strong jobs = USD strength → SELL Gold`
+        : isLower
+        ? `Forecast ${forecast} < prev ${previous} → weak jobs = USD weakness → BUY Gold`
+        : 'Wait for actual NFP number',
+      context: [
+        '📋 Jobs beat forecast = USD up = Gold DOWN = SELL XAU/USD',
+        '📋 Jobs miss forecast = USD down = Gold UP = BUY XAU/USD',
+        '🗣 Fed uses NFP to decide rate path — huge market mover',
+        '⚠ Do not trade 30 min before release — spreads widen',
+        '⚠ Enter AFTER the number drops and a candle closes',
+      ]
+    }
+  }
+
+  // CPI — higher inflation = Fed stays hawkish = USD up = SELL Gold
+  if (t.includes('cpi') || t.includes('ppi') || t.includes('inflation')) {
+    const signal = isHigher ? 'SELL GOLD' : isLower ? 'BUY GOLD' : 'WAIT FOR RELEASE'
+    const dir    = isHigher ? 'SELL' : isLower ? 'BUY' : 'WAIT'
+    return {
+      signal, dir,
+      currency: 'USD',
+      pair: 'XAU/USD',
+      reason: isHigher
+        ? `Forecast ${forecast} > prev ${previous} → hot inflation → Fed hawkish → USD up → SELL Gold`
+        : isLower
+        ? `Forecast ${forecast} < prev ${previous} → cooling inflation → Fed dovish → USD down → BUY Gold`
+        : 'Wait for CPI actual reading',
+      context: [
+        '📋 Hot CPI = Fed keeps rates high = USD up = Gold DOWN',
+        '📋 Cool CPI = Fed may cut = USD down = Gold UP',
+        '🗣 Core CPI (excluding food & energy) matters most',
+        '⚠ Enter after first 5-min candle closes post-release',
+      ]
+    }
+  }
+
+  // BOE — higher rate = GBP stronger = BUY GBP/USD
+  if (t.includes('official bank rate') || t.includes('boe') || t.includes('bank of england')) {
+    const signal = isHigher ? 'BUY GBP/USD' : isLower ? 'SELL GBP/USD' : 'WAIT FOR RELEASE'
+    const dir    = isHigher ? 'BUY' : isLower ? 'SELL' : 'WAIT'
+    return {
+      signal, dir,
+      currency: 'GBP',
+      pair: 'GBP/USD',
+      reason: isHigher
+        ? `Forecast ${forecast} > prev ${previous} → BOE hike expected → GBP strengthens → BUY GBP/USD`
+        : isLower
+        ? `Forecast ${forecast} < prev ${previous} → BOE cut expected → GBP weakens → SELL GBP/USD`
+        : 'Wait for BOE announcement',
+      context: [
+        '📋 Rate hike/hold = GBP up = BUY GBP/USD',
+        '📋 Rate cut = GBP down = SELL GBP/USD',
+        '🗣 BOE has been cutting gradually — a hold is a bullish surprise',
+        '⚠ Wait for MPC vote breakdown before entering',
+      ]
+    }
+  }
+
+  // ECB — higher rate = EUR stronger = BUY EUR/USD
+  if (t.includes('refinancing') || t.includes('ecb') || t.includes('european central')) {
+    const signal = isHigher ? 'BUY EUR/USD' : isLower ? 'SELL EUR/USD' : 'WAIT FOR RELEASE'
+    const dir    = isHigher ? 'BUY' : isLower ? 'SELL' : 'WAIT'
+    return {
+      signal, dir,
+      currency: 'EUR',
+      pair: 'EUR/USD',
+      reason: isHigher
+        ? `ECB hike/hold expected → EUR strengthens → BUY EUR/USD`
+        : isLower
+        ? `ECB cut expected → EUR weakens → SELL EUR/USD`
+        : 'Wait for ECB decision',
+      context: [
+        '📋 Rate hike or hold = EUR up = BUY EUR/USD',
+        '📋 Rate cut = EUR down = SELL EUR/USD',
+        '🗣 Lagarde press conference tone often moves market more than the rate',
+        '⚠ Trade after press conference starts for cleaner entry',
+      ]
+    }
+  }
+
+  // GDP
+  if (t.includes('gdp')) {
+    const signal = isHigher ? 'BUY BASE CURRENCY' : isLower ? 'SELL BASE CURRENCY' : 'WAIT FOR RELEASE'
+    const dir    = isHigher ? 'BUY' : isLower ? 'SELL' : 'WAIT'
+    return {
+      signal, dir,
+      currency: 'N/A',
+      pair: 'N/A',
+      reason: isHigher ? `GDP beat → economic strength → buy that country's currency`
+                       : isLower  ? `GDP miss → economic weakness → sell that country's currency`
+                       : 'Wait for GDP reading',
+      context: [
+        '📋 GDP above forecast = economy growing = BUY that currency',
+        '📋 GDP below forecast = economy contracting = SELL that currency',
+        '⚠ Wait for candle close after release',
+      ]
+    }
+  }
+
+  // Default
+  return {
+    signal: 'WAIT FOR RELEASE',
+    dir: 'WAIT',
+    currency: 'N/A',
+    pair: 'N/A',
+    reason: forecast ? `Market forecast: ${forecast} (prev: ${previous || 'N/A'})` : 'Wait for actual number',
+    context: [
+      '⚠ Wait for actual number before trading',
+      '⚠ Enter after candle close confirmation',
+    ]
+  }
 }
 
 function parseFloat2(str) {
@@ -303,25 +396,38 @@ export default function EconomicCalendar({ onClose, onExecute }) {
                         Releases {timeUntil(sel.date)} · {formatTime(sel.date)}
                       </div>
 
-                      {/* Market consensus from forecast vs previous */}
                       {(() => {
                         const bias = getPreReleaseBias(sel.title, sel.forecast, sel.previous)
+                        const isWait = bias.dir === 'WAIT'
+                        const sigColor = bias.dir === 'BUY' ? '#00e676' : bias.dir === 'SELL' ? '#ff4444' : '#ffd600'
                         return (
                           <>
-                            {bias.consensusText && (
-                              <div className={styles.consensusBox} style={{
-                                borderColor: bias.consensusDir === 'BULLISH' ? 'rgba(0,230,118,0.3)' : bias.consensusDir === 'BEARISH' ? 'rgba(255,68,68,0.3)' : 'rgba(255,255,255,0.1)'
-                              }}>
-                                <div className={styles.consensusLabel}>MARKET CONSENSUS</div>
-                                <div className={styles.consensusDir} style={{
-                                  color: bias.consensusDir === 'BULLISH' ? '#00e676' : bias.consensusDir === 'BEARISH' ? '#ff4444' : '#ffd600'
-                                }}>
-                                  {bias.consensusDir === 'BULLISH' ? '▲ BULLISH BIAS' : bias.consensusDir === 'BEARISH' ? '▼ BEARISH BIAS' : '◆ NEUTRAL'}
-                                </div>
-                                <div className={styles.consensusText}>{bias.consensusText}</div>
+                            {/* ONE clear pre-signal */}
+                            <div className={styles.preSigBox} style={{ borderColor: sigColor + '55' }}>
+                              <div className={styles.preSigLabel}>
+                                {isWait ? 'PRE-RELEASE OUTLOOK' : 'EXPECTED SIGNAL (based on forecast)'}
+                              </div>
+                              <div className={styles.preSigDir} style={{ color: sigColor }}>
+                                {isWait ? '⏳ WAIT FOR RELEASE' : (bias.dir === 'BUY' ? '▲ ' : '▼ ') + bias.signal}
+                              </div>
+                              {!isWait && bias.pair !== 'N/A' && (
+                                <div className={styles.preSigPair}>Pair: <span style={{ color: '#00bcd4' }}>{bias.pair}</span></div>
+                              )}
+                              <div className={styles.preSigReason}>{bias.reason}</div>
+                            </div>
+
+                            {/* Step by step how to trade */}
+                            {!isWait && (
+                              <div className={styles.howToBox}>
+                                <div className={styles.scenarioLabel}>HOW TO TRADE THIS</div>
+                                <div className={styles.howToStep}><span className={styles.howToNum}>1</span><span>Wait for release at <strong>{formatTime(sel.date)}</strong></span></div>
+                                <div className={styles.howToStep}><span className={styles.howToNum}>2</span><span>Check actual vs forecast — confirm <strong style={{ color: sigColor }}>{bias.signal}</strong></span></div>
+                                <div className={styles.howToStep}><span className={styles.howToNum}>3</span><span>Wait for first <strong>15min candle to close</strong> after release</span></div>
+                                <div className={styles.howToStep}><span className={styles.howToNum}>4</span><span>Enter with SL behind candle wick, TP at nearest structure</span></div>
                               </div>
                             )}
 
+                            {/* Context */}
                             {bias.context.length > 0 && (
                               <>
                                 <div className={styles.scenarioLabel} style={{ marginTop: 12 }}>MARKET CONTEXT</div>
@@ -336,22 +442,9 @@ export default function EconomicCalendar({ onClose, onExecute }) {
                         )
                       })()}
 
-                      <div className={styles.scenarioLabel} style={{ marginTop: 14 }}>POSSIBLE OUTCOMES</div>
-                      <div className={styles.scenarios}>
-                        {getScenarios(sel.title, sel.pairs).map((s, i) => (
-                          <div key={i} className={styles.scenarioRow}>
-                            <div className={styles.scenarioIf}>{s.condition}</div>
-                            <div className={styles.scenarioThen} style={{ color: getDirColor(s.direction) }}>
-                              → {s.direction}
-                            </div>
-                            <div className={styles.scenarioPairs}>{s.pairs.join(' · ')}</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className={styles.warnings} style={{ marginTop: 12 }}>
-                        <div className={styles.warningRow}>⚠ Do NOT trade before the release.</div>
-                        <div className={styles.warningRow}>⏱ Wait for actual number + candle close.</div>
+                      <div className={styles.warnings} style={{ marginTop: 14 }}>
+                        <div className={styles.warningRow}>⚠ Forecast-based bias — NOT a confirmed signal yet.</div>
+                        <div className={styles.warningRow}>⏱ Only enter AFTER actual number + 15min candle close.</div>
                         <div className={styles.warningRow}>💰 Only risk what you can afford to lose.</div>
                       </div>
                       <div className={styles.responsibleText}>Trade responsibly. 🧠</div>

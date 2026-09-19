@@ -299,6 +299,74 @@
 /* ── Pre-release scenario panel ── */
 .preRelease { display: flex; flex-direction: column; gap: 0; }
 
+/* Pre-signal box — ONE clear signal */
+.preSigBox {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 4px;
+}
+.preSigLabel {
+  font-size: 0.58rem;
+  color: #5a6370;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+.preSigDir {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1.2rem;
+  margin-bottom: 4px;
+}
+.preSigPair {
+  font-size: 0.7rem;
+  color: #888;
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 6px;
+}
+.preSigReason {
+  font-size: 0.68rem;
+  color: #99a0ad;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.5;
+}
+
+/* How to trade box */
+.howToBox {
+  background: rgba(0,188,212,0.04);
+  border: 1px solid rgba(0,188,212,0.15);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.howToStep {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.7rem;
+  color: #c8cdd6;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.4;
+}
+.howToNum {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: rgba(0,188,212,0.2);
+  color: #00bcd4;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 0.6rem;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 /* Consensus box */
 .consensusBox {
   background: rgba(255,255,255,0.03);
