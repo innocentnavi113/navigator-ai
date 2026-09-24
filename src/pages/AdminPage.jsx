@@ -58,7 +58,7 @@ export default function AdminPage({ onBack, session }) {
       if (plan === 'standard') {
         update = {
           plan: 'standard',
-          scans_total: 20,
+          scans_total: 100,
           scans_used: 0,
           expires_at: null,
           activated_at: now,
@@ -266,7 +266,7 @@ export default function AdminPage({ onBack, session }) {
                     onClick={() => activatePlan(sub.user_id, 'standard')}
                     disabled={updating === sub.user_id}
                     style={{ borderColor: '#00bcd4', color: '#00bcd4' }}
-                  >Standard $25</button>
+                  >Standard R410 · 100 scans</button>
                   <button
                     className={`${styles.actionBtn} ${sub.plan === 'premium' ? styles.actionBtnActive : ''}`}
                     onClick={() => activatePlan(sub.user_id, 'premium')}
