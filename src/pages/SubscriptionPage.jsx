@@ -4,7 +4,7 @@ const PLANS = [
   {
     id: 'free',
     name: 'Free',
-    price: '$0',
+    price: 'R0',
     period: 'forever',
     scans: 3,
     scanLabel: '3 scans total',
@@ -23,7 +23,7 @@ const PLANS = [
   {
     id: 'standard',
     name: 'Standard',
-    price: '$25',
+    price: 'R410',
     period: 'one-time purchase',
     scans: 20,
     scanLabel: '20 scans',
@@ -36,7 +36,7 @@ const PLANS = [
     ],
     cta: 'Buy Standard',
     ctaDisabled: false,
-    url: 'https://paystack.com/buy/app-scanner--standard--gxfshu',
+    url: 'https://pay.yoco.com/axion-tradingco?amount=410.00&reference=Standard',
     color: '#00bcd4',
     accent: 'rgba(0,188,212,0.08)',
     border: 'rgba(0,188,212,0.3)',
@@ -45,7 +45,7 @@ const PLANS = [
   {
     id: 'premium',
     name: 'Premium',
-    price: '$100',
+    price: 'R1645',
     period: 'per year',
     scans: -1,
     scanLabel: 'Unlimited scans',
@@ -60,7 +60,7 @@ const PLANS = [
     ],
     cta: 'Buy Premium',
     ctaDisabled: false,
-    url: 'https://paystack.com/buy/app-scanner--premium--onvowo',
+    url: 'https://pay.yoco.com/axion-tradingco?amount=1645.00&reference=Premium',
     color: '#00e676',
     accent: 'rgba(0,230,118,0.08)',
     border: 'rgba(0,230,118,0.35)',
@@ -166,7 +166,7 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
             </button>
 
             {plan.url && (
-              <div className={styles.poweredBy}>🔒 Secured by Paystack</div>
+              <div className={styles.poweredBy}>🔒 Secured by Yoco</div>
             )}
           </div>
         ))}
@@ -175,7 +175,7 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
       <div className={styles.afterPayment}>
         <div className={styles.afterPaymentTitle}>After Payment</div>
         <div className={styles.afterPaymentText}>
-          After completing payment on Paystack, send your payment confirmation
+          After completing payment on Yoco, send your payment confirmation
           to activate your plan. Your scans will be credited within minutes.
         </div>
 
@@ -193,7 +193,7 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
           { q: 'What counts as a scan?', a: 'Each time you tap Scan and get a result counts as one scan. Multi-TF uses 4 scans.' },
           { q: 'Do Standard scans expire?', a: 'No — Standard plan scans never expire. Use them at your own pace.' },
           { q: 'When does Premium reset?', a: 'Premium unlimited scans reset 365 days (1 year) from your payment date.' },
-          { q: 'Which payment methods are accepted?', a: 'Card, bank transfer, USSD, and mobile money via Paystack.' },
+          { q: 'Which payment methods are accepted?', a: 'Card, Instant EFT, Capitec Pay, and other methods via Yoco.' },
         ].map(({ q, a }) => (
           <div key={q} className={styles.faqItem}>
             <div className={styles.faqQ}>{q}</div>
