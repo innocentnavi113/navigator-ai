@@ -5,6 +5,7 @@ const PLANS = [
     id: 'free',
     name: 'Free',
     price: 'R0',
+    priceUSD: null,
     period: 'forever',
     scans: 3,
     scanLabel: '3 scans total',
@@ -24,11 +25,12 @@ const PLANS = [
     id: 'standard',
     name: 'Standard',
     price: 'R410',
+    priceUSD: '~$22',
     period: 'one-time purchase',
-    scans: 20,
-    scanLabel: '20 scans',
+    scans: 100,
+    scanLabel: '100 scans',
     features: [
-      '20 scan credits',
+      '100 scan credits',
       'Full AI analysis',
       'Multi-TF scanner',
       'Push alerts',
@@ -46,6 +48,7 @@ const PLANS = [
     id: 'premium',
     name: 'Premium',
     price: 'R1645',
+    priceUSD: '~$90',
     period: 'per year',
     scans: -1,
     scanLabel: 'Unlimited scans',
@@ -134,6 +137,9 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
             <div className={styles.planHeader}>
               <div className={styles.planName} style={{ color: plan.color }}>{plan.name}</div>
               <div className={styles.planPrice}>{plan.price}</div>
+              {plan.priceUSD && (
+                <div className={styles.planPriceUSD}>{plan.priceUSD} USD</div>
+              )}
               <div className={styles.planPeriod}>{plan.period}</div>
             </div>
 
@@ -166,7 +172,7 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
             </button>
 
             {plan.url && (
-              <div className={styles.poweredBy}>🔒 Secured by Yoco</div>
+              <div className={styles.poweredBy}>🔒 Secured by Yoco · Charged in ZAR</div>
             )}
           </div>
         ))}
@@ -193,7 +199,7 @@ export default function SubscriptionPage({ onBack, currentPlan = 'free', scansLe
           { q: 'What counts as a scan?', a: 'Each time you tap Scan and get a result counts as one scan. Multi-TF uses 4 scans.' },
           { q: 'Do Standard scans expire?', a: 'No — Standard plan scans never expire. Use them at your own pace.' },
           { q: 'When does Premium reset?', a: 'Premium unlimited scans reset 365 days (1 year) from your payment date.' },
-          { q: 'Which payment methods are accepted?', a: 'Card, Instant EFT, Capitec Pay, and other methods via Yoco.' },
+          { q: 'Which payment methods are accepted?', a: 'Card, Instant EFT, Capitec Pay, and other methods via Yoco. All payments are in South African Rand (ZAR).' },
         ].map(({ q, a }) => (
           <div key={q} className={styles.faqItem}>
             <div className={styles.faqQ}>{q}</div>
